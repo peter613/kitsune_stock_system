@@ -1,0 +1,17 @@
+# 虛擬環境與快取
+venv/
+__pycache__/
+*.pyc
+
+# 安裝與編譯暫存
+build/
+dist/
+*.egg-info/
+catboost_info/
+
+# 敏感設定 (等一下我們會把 API Key 移到這裡)
+.env
+config_private.py
+
+#檔案太大無法上傳
+data/database/

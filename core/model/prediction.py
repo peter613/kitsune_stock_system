@@ -1,0 +1,102 @@
+import pandas as pd
+import numpy as np
+from catboost import CatBoostRanker
+import os
+from datetime import datetime
+import config
+
+def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型別提示
+    # 1. 設定與載入
+    MODEL_FILE = config.CBM_DIR/f"strategy_{version}.cbm"
+    DATA_FILE = config.FEATURES_DIR/"pred.csv"
+    
+    print(f"正在載入模型: {MODEL_FILE}")
+    if not os.path.exists(MODEL_FILE):
+        return f"❌ 錯誤：找不到模型檔案 {MODEL_FILE}"
+
+    model = CatBoostRanker()
+    model.load_model(MODEL_FILE)
+    feature_cols = model.feature_names_
+
+    # 2. 資料讀取
+    if not os.path.exists(DATA_FILE):
+        return f"❌ 錯誤：找不到資料檔案 {DATA_FILE}"
+
+    df = pd.read_csv(DATA_FILE)
+    df['date'] = pd.to_datetime(df['date'])
+    latest_date = df['date'].max()
+
+    target_df = df[df['date'] == latest_date].copy().reset_index(drop=True)
+    target_df = target_df.fillna(0)
+    
+    print(f"資料日期: {latest_date.date()} | 篩選排名: {select_ranks}")
+
+    # 3. 預測與排序
+    if target_df.empty:
+        return "❌ 錯誤：找不到最新日期的資料。"
+
+    missing_cols = [c for c in feature_cols if c not in target_df.columns]
+    if missing_cols:
+        return f"目前的 pred.csv 缺少模型 ({version}) 所需的特徵：{missing_cols}。請重新執行特徵工程腳本。"
+    
+    scores = model.predict(target_df[feature_cols])
+    target_df['predict_score'] = scores 
+    target_df = target_df.sort_values('predict_score', ascending=False).reset_index(drop=True)
+    target_df['rank'] = range(1, len(target_df) + 1)
+
+    # --- 核心邏輯修改：改為回傳字串而不是單純 print ---
+    def get_feature_analysis_string(all_df, ranks_to_show, features_to_analyze) -> str:
+        analysis_df = all_df.copy()
+        valid_features = []
+        
+        # 計算百分位
+        for col in features_to_analyze:
+            if col in analysis_df.columns and pd.api.types.is_numeric_dtype(analysis_df[col]):
+                analysis_df[f"{col}_pct"] = analysis_df[col].rank(pct=True)
+                valid_features.append(col)
+        
+        display_df = analysis_df[analysis_df['rank'].isin(ranks_to_show)].copy()
+        
+        # 收集分析字串供 AI 讀取
+        ai_payload = []
+        ai_payload.append(f"Inari 特徵分析 (對標全市場 {len(all_df)} 檔科技股):")
+        
+        for _, row in display_df.iterrows():
+            stock_info = f"Rank {int(row['rank'])}. [{row['id']}] {row['name']} (得分: {row['predict_score']:.4f})"
+            print(f"\n{stock_info}") # 保留螢幕輸出給人類看
+            
+            strong_feats = []
+            for feat in valid_features:
+                pct_val = row[f"{feat}_pct"]
+                if pct_val > 0.8:
+                    strong_feats.append((feat, pct_val))
+            
+            strong_feats = sorted(strong_feats, key=lambda x: x[1], reverse=True)
+            
+            if strong_feats:
+                output_str = ", ".join([f"{k}(PR{v*100:.1f})" for k, v in strong_feats])
+                print(output_str) # 保留螢幕輸出
+                ai_payload.append(f"{stock_info} -> 強勢特徵: {output_str}")
+            else:
+                print("指標分佈平均，無顯著單一強項。")
+                ai_payload.append(f"{stock_info} -> 指標分佈平均。")
+                
+        # 將串列結合成單一字串
+        return "\n".join(ai_payload)
+
+    # 執行分析，並把結果存進變數
+    ai_analysis_data = get_feature_analysis_string(target_df, select_ranks, feature_cols)
+
+    # 4. 存檔
+    top_picks = target_df[target_df['rank'].isin(select_ranks)].copy()
+    file_name = f'{datetime.now().strftime("%Y-%m-%d")}_{version}_prediction.csv'
+    output_dir = config.PREDICTION_REPORT_DIR/ file_name
+    
+    top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')
+    print(f"\n預測結果已儲存至: {output_dir}")
+
+    # 5. 回傳封裝好的資料給 Kitsune 大腦
+    return f"以下是選股結果與其在全市場的特徵百分位(PR)排名：{ai_analysis_data}"
+
+if __name__ == "__main__":
+    prediction(version='v16', select_ranks=[c for c in range(1,6)])

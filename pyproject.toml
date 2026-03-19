@@ -1,0 +1,32 @@
+#更新打pip install -e .
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kernel"
+version = "0.1.0"
+# 這是你的採購清單，執行 pip install -e . 時會自動安裝
+dependencies = [
+    "pandas",
+    "yfinance",
+    "catboost",
+    "plotly",
+    "streamlit",
+    "shap",
+    "selenium",
+    "matplotlib",
+    "requests",
+    "urllib3",
+    "TA-Lib" ,
+    "seaborn",
+    "lxml",
+    "pyarrow",
+    "google-genai",
+    "dotenv"
+]
+
+[tool.setuptools]
+# 這裡就是架構師的明確授權：定義範圍
+packages = ["cbm", "core", "data", "journal", "reports", "sandbox"]#資料夾
+py-modules = ["config","main", "dashboard"]#檔案
