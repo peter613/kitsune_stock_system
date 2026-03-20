@@ -22,7 +22,7 @@ st.markdown("""
         margin-bottom: 0px !important;     
         padding-top: 0rem !important;
         padding-bottom: 1rem !important;
-        font-weight: 600 !important;
+        font-weight: 650 !important;
     }
 
     /* 2. 將 st.subheader (預設 h3) 降級為 h4 視覺大小，並壓縮間距 */
@@ -62,7 +62,7 @@ st.markdown("""
     /* 6. 調整側邊欄導航 (st.radio) 的標題大小：例如「選單」 */
     [data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {
         font-size: 1.2rem !important;
-        font-weight: 600 !important;
+        font-weight: 450 !important;
         color: #000000 !important;
     }
 
@@ -614,84 +614,131 @@ def page_monthly_performance(df_history):
         st.warning("無數據")
         return
 
-    # 1. 將每日資料按月份分組，抓取每個月最後一天的紀錄
+    # 1. 資料處理
     df = df_history.copy()
     df['month'] = df['date'].dt.strftime('%Y-%m')
-    monthly_end = df.groupby('month').last().reset_index()
-
-    # 2. 計算月度獨立報酬率 (NAV增長率) 與 實質獲利金額
-    # 使用 shift(1) 取得上個月的數值，若為第一個月則補 0 或 1
-    monthly_end['prev_nav_ratio'] = monthly_end['roi_total'].shift(1).fillna(0) + 1.0
-    monthly_end['curr_nav_ratio'] = monthly_end['roi_total'] + 1.0
-    monthly_end['monthly_ret_pct'] = (monthly_end['curr_nav_ratio'] / monthly_end['prev_nav_ratio'] - 1) * 100
+    df['daily_ret'] = df['roi_total'].diff().fillna(0) # 用於計算月度波動
     
-    # 針對第一個月的特例處理
-    monthly_end.loc[0, 'monthly_ret_pct'] = (monthly_end.loc[0, 'curr_nav_ratio'] - 1.0) * 100
+    m_groups = df.groupby('month')
+    monthly_end = m_groups.last().reset_index()
 
-    # 月度獲利金額 = 本月底總淨值 - 上月底總淨值 - 本月新增投入本金
+    # 計算月報酬、大盤月報酬與 Alpha (幾何邏輯)
+    monthly_end['prev_nav'] = monthly_end['roi_total'].shift(1).fillna(0) + 1.0
+    monthly_end['monthly_ret_pct'] = ((monthly_end['roi_total'] + 1.0) / monthly_end['prev_nav'] - 1) * 100
+    monthly_end.loc[0, 'monthly_ret_pct'] = (monthly_end.loc[0, 'roi_total']) * 100
+
+    monthly_end['prev_0050'] = monthly_end['roi_0050'].shift(1).fillna(0) + 1.0
+    monthly_end['m_0050'] = ((monthly_end['roi_0050'] + 1.0) / monthly_end['prev_0050'] - 1) * 100
+    monthly_end.loc[0, 'm_0050'] = (monthly_end.loc[0, 'roi_0050']) * 100
+    
+    monthly_end['monthly_alpha_pct'] = (((1 + monthly_end['monthly_ret_pct']/100) / (1 + monthly_end['m_0050']/100)) - 1) * 100
+
+    # 計算獲利金額
     monthly_end['prev_total_nav'] = monthly_end['total_nav'].shift(1).fillna(0)
-    monthly_end['prev_principal'] = monthly_end['principal'].shift(1).fillna(0)
-    monthly_end['principal_added'] = monthly_end['principal'] - monthly_end['prev_principal']
+    monthly_end['principal_added'] = monthly_end['principal'] - monthly_end['principal'].shift(1).fillna(0)
     monthly_end['monthly_profit'] = monthly_end['total_nav'] - monthly_end['prev_total_nav'] - monthly_end['principal_added']
 
-    # 3. 繪製圖表 (折線圖 + 柱狀圖的混合視覺化)
-    col1, col2 = st.columns(2)
+    # 計算月度 Sharpe/Sortino
+    risk_stats = []
+    for m, group in m_groups:
+        d_ret = group['daily_ret']
+        avg, std = d_ret.mean(), d_ret.std()
+        sharpe = (avg / std) * np.sqrt(252) if std > 0 else 0
+        d_std = d_ret[d_ret < 0].std()
+        sortino = (avg / d_std) * np.sqrt(252) if d_std > 0 else (sharpe if avg > 0 else 0)
+        risk_stats.append({'month': m, 'Sharpe': sharpe, 'Sortino': sortino})
+    monthly_end = monthly_end.merge(pd.DataFrame(risk_stats), on='month')
+
+    # 計算平均值與中位數 (供標題使用)
+    avg_ret, med_ret = monthly_end['monthly_ret_pct'].mean(), monthly_end['monthly_ret_pct'].median()
+    avg_prof, med_prof = monthly_end['monthly_profit'].mean(), monthly_end['monthly_profit'].median()
+
+    r1_col1, r1_col2 = st.columns(2)
     
-    with col1:
-        st.subheader("單月報酬率 (%)")
-        fig_ret = go.Figure()
-        # 台股直覺：紅漲 (#FF3333) 綠跌 (#00AA00)
+    with r1_col1:
+        st.subheader("月報酬率")
+        st.caption(f"Avg: {avg_ret:.1f}%  |  Med: {med_ret:.1f}%")
         colors_ret = ["#FF7D7D" if val > 0 else "#A4FFA4" for val in monthly_end['monthly_ret_pct']]
-        
-        fig_ret.add_trace(go.Bar(
+        fig_ret = go.Figure(go.Bar(
             x=monthly_end['month'], 
-            y=monthly_end['monthly_ret_pct'],
+            y=monthly_end['monthly_ret_pct'], 
             marker_color=colors_ret, 
-            text=monthly_end['monthly_ret_pct'].round(2).astype(str) + '%',
-            textposition='outside', 
-            name="月報酬率"
+            text=monthly_end['monthly_ret_pct'].round(1).astype(str)+'%', 
+            textposition='outside'
         ))
-        
         fig_ret.update_layout(
-            template="plotly_white",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color="#444444"),
-            yaxis_ticksuffix="%", 
-            hovermode="x unified",
-            margin=dict(l=0, r=0, t=30, b=0),
-            xaxis=dict(type="category", gridcolor="#EEE"),
-            yaxis=dict(gridcolor="#EEE")
+            template="plotly_white", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+            margin=dict(l=20,r=20,t=30,b=20), height=300,
+            xaxis=dict(type="category") # 強制類別型軸，避免時間軸間距問題
         )
         st.plotly_chart(fig_ret, use_container_width=True)
 
-    with col2:
-        st.subheader("單月實質獲利 (TWD)")
-        fig_prof = go.Figure()
-        # 獲利同樣採用紅綠邏輯，或可統一使用系統橘色 (#FF8800)
+    with r1_col2:
+        st.subheader("月損益")
+        st.caption(f"Avg: {avg_prof:,.0f}  |  Med: {med_prof:,.0f}")
         colors_prof = ['#FF7D7D' if val > 0 else '#A4FFA4' for val in monthly_end['monthly_profit']]
-        
-        fig_prof.add_trace(go.Bar(
+        fig_prof = go.Figure(go.Bar(
             x=monthly_end['month'], 
-            y=monthly_end['monthly_profit'],
-            marker_color=colors_prof, # 這裡建議也用紅綠，視覺邏輯才統一
-            text=monthly_end['monthly_profit'].map('{:,.0f}'.format),
-            textposition='outside',
-            name="獲利金額", 
-            hovertemplate='$%{y:,.0f}<extra></extra>'
+            y=monthly_end['monthly_profit'], 
+            marker_color=colors_prof, 
+            text=monthly_end['monthly_profit'].map('{:,.0f}'.format), 
+            textposition='outside'
         ))
-        
         fig_prof.update_layout(
-            template="plotly_white",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color="#444444"),
-            hovermode="x unified",
-            margin=dict(l=0, r=0, t=30, b=0),
-            xaxis=dict(type="category", gridcolor="#EEE"),
-            yaxis=dict(gridcolor="#EEE")
+            template="plotly_white", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+            margin=dict(l=20,r=20,t=30,b=20), height=300,
+            xaxis=dict(type="category")
         )
         st.plotly_chart(fig_prof, use_container_width=True)
+
+    st.caption("")
+
+    r2_col1, r2_col2 = st.columns(2)
+
+    with r2_col1:
+        st.subheader("Alpha 趨勢")
+        # st.caption("幾何超額報酬 (穩定度監控)")
+        fig_alpha = go.Figure(go.Scatter(
+            x=monthly_end['month'], 
+            y=monthly_end['monthly_alpha_pct'], 
+            mode='lines+markers', 
+            line=dict(color='#16A085', width=3), 
+            fill='tozeroy',
+            fillcolor='rgba(22, 160, 133, 0.1)'
+        ))
+        fig_alpha.update_layout(
+            template="plotly_white", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+            margin=dict(l=20,r=20,t=30,b=20), height=300, 
+            yaxis_ticksuffix="%",
+            xaxis=dict(type="category")
+        )
+        st.plotly_chart(fig_alpha, use_container_width=True)
+
+    with r2_col2:
+        st.subheader("夏普/索提諾")
+        # st.caption("Sharpe (紫) & Sortino (橘)")
+        fig_risk = go.Figure()
+        fig_risk.add_trace(go.Scatter(
+            x=monthly_end['month'], y=monthly_end['Sharpe'], 
+            name="Sharpe", line=dict(color='#4F247E', width=2)
+        ))
+        fig_risk.add_trace(go.Scatter(
+            x=monthly_end['month'], y=monthly_end['Sortino'], 
+            name="Sortino", line=dict(color='#db3b00', width=2, dash='dot')
+        ))
+        fig_risk.update_layout(
+            template="plotly_white", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+            margin=dict(l=20,r=20,t=30,b=20), height=300, 
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            xaxis=dict(type="category")
+        )
+        st.plotly_chart(fig_risk, use_container_width=True)
+
+    # 下方保留量化表格，供精確數值查閱
+    st.markdown("---")
+    report_df = monthly_end[['month', 'monthly_ret_pct', 'monthly_alpha_pct', 'Sharpe', 'Sortino']].copy()
+    report_df.columns = ['月份', '報酬率', 'Alpha', 'Sharpe', 'Sortino']
+    st.dataframe(report_df.style.format({'報酬率': '{:.2f}%', 'Alpha': '{:.2f}%', 'Sharpe': '{:.2f}', 'Sortino': '{:.2f}'}), use_container_width=True, hide_index=True)
 # ==========================================
 # 主程式
 # ==========================================
@@ -714,6 +761,7 @@ def main():
         target_progress = (current_nav / 10000000) * 100
 
         st.title(f"KITSUNE KERNEL")
+        st.caption("")
         selection = st.radio(f"選單",["累積報酬率", "累積權益", "目前配置", "損益結算中心","單月績效報告"])
 
     if selection == "累積報酬率":
