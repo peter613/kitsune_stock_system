@@ -283,8 +283,9 @@ def page_performance_pct(df_history):
     roi_pct = last_row['roi_total'] * 100 # 真實累積報酬率(%)
     roi_0050 = last_row['roi_0050'] * 100 # 真實累積報酬率(%)
     roi_00631 = last_row['roi_00631L'] * 100 # 真實累積報酬率(%)
-    alpha_0050 = roi_pct-roi_0050
-    alpha_00631 = roi_pct-roi_00631
+    # 使用幾何超額報酬計算，消除長期複利帶來的基期失真
+    alpha_0050 = (((1 + last_row['roi_total']) / (1 + last_row['roi_0050'])) - 1) * 100
+    alpha_00631 = (((1 + last_row['roi_total']) / (1 + last_row['roi_00631L'])) - 1) * 100
     max_dd = df_history["dd_pct"].min()*100
 
     col1, col2, col3 = st.columns(3)
