@@ -43,7 +43,7 @@ def update_0050(specific_date=None):
     # 邏輯分流：建立歷史 vs. 更新特定日期/每日更新
     if not os.path.exists(file_path):
         print("檢測到 0050 資料庫不存在，執行歷史初始化 (從 2025-10-01 開始)...")
-        stock_df = yf_download('0050', start_d='2025-10-01')
+        stock_df = yf_download('0050', start_d='2023-01-01')
         
         if not stock_df.empty:
             stock_df['close'] = stock_df['close'].round(2)

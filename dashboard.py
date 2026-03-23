@@ -1,3 +1,9 @@
+#streamlit run c:/Users/Lynn610/Documents/kitsune_stock_system/dashboard.py
+
+# st.title() → 渲染為 <h1>
+# st.header() → 渲染為 <h2>
+# st.subheader() → 渲染為 <h3>
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,81 +16,77 @@ st.set_page_config(page_title="Kitsune Kernel", layout="wide")
 # 全域 CSS 注入：統一壓縮標題與子標題的高度與字體大小
 st.markdown("""
     <style>
-    /* 側邊欄寬度控制 */
-    [data-testid='stSidebar'] {
-        width: 200px !important;
-    }
-    
-    /* 1. 將 st.title (預設 h1) 降級為 h3 視覺大小，並極限壓縮頂部高度 */
-    .stApp h1 {
-        font-size: 1.5rem !important;      
-        margin-top: -50px !important;      
-        margin-bottom: 0px !important;     
-        padding-top: 0rem !important;
-        padding-bottom: 1rem !important;
-        font-weight: 650 !important;
-    }
-
-    /* 2. 將 st.subheader (預設 h3) 降級為 h4 視覺大小，並壓縮間距 */
-    .stApp h3 {
-        font-size: 1.2rem !important;      /* h4 的精緻字體大小 */
-        margin-top: -10px !important;      /* 稍微往上拉，減少與上方表格/分隔線的距離 */
-        margin-bottom: 0px !important;     /* 消除與下方 Dataframe 的空白 */
-        padding-top: 0.5rem !important;
-        padding-bottom: 0.5rem !important;
-        font-weight: 500 !important;
-    }
-
-    /* 3. 針對 st.metric 標題 (大字段落 <p>) 的精準渲染 */
-    [data-testid="stMetricLabel"] p {
-        font-size: 1.2rem !important;  /* 調整為你適合的大小 */
-        font-weight: 400 !important;   /* 增加厚度 */
-        color:#101010 !important;    
-        opacity: 1 !important;         /* 徹底解決灰濛濛的透明度問題 */
-        margin-bottom: 10px !important; /* 壓縮標題與數字之間的間距 */
-    }
-
-    /* 4. 針對 st.metric 數字 (小字區塊 <div>) 的精準渲染 */
-    [data-testid="stMetricValue"] div {
-        font-size: 2.2rem !important;
-        font-weight: 600 !important;
-        color:#db3b00 !important;
-        opacity: 0.95 !important; /* 調整為 0.0 ~ 1.0 之間 */
-    }
-    /* 5. 修正側邊欄進度小字 (Caption) 的亮度與大小 */
-    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
-    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
-        color: #000000 !important;     /* 移除引號，強制亮灰色 */
-        opacity: 1 !important;         /* 徹底取消透明度 */
-        font-size: 1.0rem !important;  /* 稍微放大一點 */
-    }
-
-    /* 6. 調整側邊欄導航 (st.radio) 的標題大小：例如「選單」 */
-    [data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {
-        font-size: 1.2rem !important;
-        font-weight: 450 !important;
-        color: #000000 !important;
-    }
-
-    /* 7. 調整側邊欄導航的「選項文字」：例如「累積報酬率」 */
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-        font-size: 1.1rem !important;  /* 調整選項字體 */
-        color: #000000 !important;
-    }
-
-
-    /* 8. 側邊欄背景色：很淡很淡的 (#EDE6DB) */
     [data-testid="stSidebar"] {
         background-color: #fcf5ed !important;
     }
+ 
+    [data-testid="stSidebar"] h1 {
+        margin-top: -2rem !important;
+        padding-top: 2px !important;
+    }
     
-    /* 9. 調整導航選項間距：讓選項之間稍微拉開一點，不要太擠 */
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-        margin-bottom: 10px !important;
+    [data-testid="stAppViewBlockContainer"] {
+        padding-top: 0rem !important; 
     }
 
+    /* 2. 標題與數據 (完全保留你的設定) */
+    .stApp h1 {
+        font-size: 1.5rem !important;      
+        padding-bottom: 0.8rem !important;
+        font-weight: 700 !important;
+        color: #1a1a1a;
+    }
+
+    .stApp h3 {
+        font-size: 1.1rem !important;      
+        margin-top: -5px !important;
+        padding-bottom: 0.6rem !important;
+        font-weight: 400 !important;
+    }
+
+    [data-testid="stMetricLabel"] p {
+        font-size: 1.0rem !important;
+        font-weight: 500 !important;
+        color: #333333 !important;
+        opacity: 1 !important;
+        margin-bottom: 0px !important;
+    }
+
+    [data-testid="stMetricValue"] div {
+        font-size: 2.0rem !important;
+        font-weight: 700 !important;
+        color: #C0392B !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: #1a1a1a !important;
+        font-size: 1.05rem !important;
+        margin-bottom: 8px !important;
+    }
+
+    [data-testid="stSidebar"] .st-emotion-cache-6qob1r { 
+        font-size: 1.1rem !important; 
+    }
+
+    /* 3. 警報 (在你的設定基礎上，加入最少跑馬燈邏輯) */
+    /* 針對 st.error 的整個容器進行加深處理 */
+    div[data-testid="stAlertContainer"]{
+        background-color:#1A2B4C!important; /* 背景 */
+        padding-top: 1rem !important;    /* 上內距 */
+        padding-bottom: 1rem !important; /* 下內距 */
+        height:100%!important;
+        width: 100% !important;
+    }
+
+    /* 針對警報內的文字 */
+    div[data-testid="stAlert"] p {
+        color:  #ffffff	  !important;            
+        font-size: 1.0rem !important;         /* 放大字體 */
+        font-weight: 700 !important;          /* 極粗體 */
+        letter-spacing: 3.0px !important;     /* 增加字距營造嚴肅感 */
+    }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 START_DATE = '2026-03-11'
 init_cap = 335800
@@ -104,6 +106,7 @@ def load_data():
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
     df_record['cash_flow'] = np.where(df_record['action'] == 'in', df_record['price'], 
                              np.where(df_record['action'] == 'out', -df_record['price'], 0))
+    
 
     # 內部函數：標準化報價資料庫欄位
     def standardize_market_df(df):
@@ -141,6 +144,15 @@ def load_data():
             df = pd.read_csv(path, dtype={'id': str})
             df = standardize_market_df(df)
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
+            
+            # --- 核心修正：在切片(Filter)之前，先算好波動率 ---
+            df.columns = [c.lower() for c in df.columns]
+            p_col = 'price' if 'price' in df.columns else 'close'
+            df['daily_return'] = df[p_col].pct_change()
+            # 這裡會用到 CSV 裡所有的歷史資料，絕對夠 20 筆
+            df['realized_vol'] = df['daily_return'].rolling(window=20).std() * (252 ** 0.5)
+            
+            # 算完之後，再根據 START_DATE 切片回傳
             return df[df['date'] >= START_DATE].copy()
         return pd.DataFrame()
 
@@ -271,6 +283,107 @@ def calculate_daily_history(df_record, df_price, df_0050, df_00631L):
     return df_res
 
 # ==========================================
+# 模組3：共用資產結算引擎 (提供給各頁面使用)
+# ==========================================
+@st.cache_data
+def calculate_settlement_data(df_record, df_price):
+    if df_record.empty:
+        return [], [], 0, 0
+
+    df_trade = df_record[df_record['id'] != 'cash'].copy()
+    latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict() if not df_price.empty else {}
+
+    unrealized_data, realized_data = [], []
+
+    for aid in df_trade['id'].unique():
+        sub = df_trade[df_trade['id'] == aid].sort_values('date')
+        cum_shares = 0
+        total_cost = 0
+        shares_sold = 0
+        revenue = 0
+        
+        # 追蹤手續費
+        cum_buy_fee = 0
+        cum_sell_fee = 0
+        raw_sell_val = 0
+
+        stock_name = sub['name'].iloc[0] if 'name' in sub.columns else ""
+
+        for _, row in sub.iterrows():
+            trade_val = row['price'] * row['share']
+            if row['action'] == 'buy':
+                fee = int(trade_val * 0.001425)  
+                cum_buy_fee += fee
+                cum_shares += row['share']
+                total_cost += trade_val + fee    
+            elif row['action'] == 'sell':
+                fee = int(trade_val * 0.001425) + int(trade_val * 0.003) 
+                cum_sell_fee += fee
+                shares_sold += row['share']
+                raw_sell_val += trade_val
+                revenue += trade_val - fee       
+
+        curr_shares = cum_shares - shares_sold
+        avg_cost = total_cost / cum_shares if cum_shares > 0 else 0
+        avg_buy_fee = cum_buy_fee / cum_shares if cum_shares > 0 else 0
+        
+        yahoo_url = f"https://tw.stock.yahoo.com/quote/{aid}"
+
+        if shares_sold > 0:
+            sell_cost = shares_sold * avg_cost
+            r_pnl = revenue - sell_cost
+            r_roi_pct = (r_pnl / sell_cost) * 100 if sell_cost > 0 else 0.0
+            
+            # if r_roi_pct > 0: r_roi_str = f"▲ {r_roi_pct:.1f}%"
+            # elif r_roi_pct < 0: r_roi_str = f"▼ -{abs(r_roi_pct):.1f}%"
+            # else: r_roi_str = "− 0.0%"
+                
+            avg_sell_px = raw_sell_val / shares_sold
+            realized_total_fee = (shares_sold * avg_buy_fee) + cum_sell_fee
+
+            realized_data.append({
+                "代號": yahoo_url,    
+                "名稱": stock_name,    
+                "累積報酬率": f"{r_roi_pct:.1f}%",
+                "已實現損益": round(r_pnl, 0),
+                "平均成本": round(avg_cost, 1), 
+                "賣出均價": f"{avg_sell_px:.1f}",
+                "買賣手續費": int(realized_total_fee),
+                "賣出股數": int(shares_sold), 
+                "回收現金": round(revenue, 0)
+            })
+
+        if curr_shares > 0:
+            px = latest_px.get(aid, 0.0)
+            mv = curr_shares * px
+            est_sell_fee = int(mv * 0.001425) + int(mv * 0.003)
+            u_pnl = mv - (curr_shares * avg_cost) - est_sell_fee
+            roi_pct = (u_pnl / (curr_shares * avg_cost)) * 100 if avg_cost > 0 else 0.0
+
+            # if roi_pct > 0: roi_str = f"▲ {roi_pct:.1f}%"
+            # elif roi_pct < 0: roi_str = f"▼ -{abs(roi_pct):.1f}%"
+            # else: roi_str = "− 0.0%"
+                
+            unrealized_buy_fee = curr_shares * avg_buy_fee
+
+            unrealized_data.append({
+                "代號": yahoo_url,    
+                "名稱": stock_name,    
+                "累積報酬率": f"{roi_pct:.1f}%",
+                "未實現損益": round(u_pnl, 0),
+                "平均成本": round(avg_cost, 1), 
+                "最新市價": f"{px:.1f}", 
+                "買入手續費": int(unrealized_buy_fee), 
+                "買入股數": int(curr_shares),
+                "當前市值": round(mv, 0),
+            })
+
+    total_unrealized = sum(item["未實現損益"] for item in unrealized_data)
+    total_realized = sum(item["已實現損益"] for item in realized_data)
+
+    return unrealized_data, realized_data, total_unrealized, total_realized
+
+# ==========================================
 # 頁面 1：投組報酬率
 # ==========================================
 def page_performance_pct(df_history):
@@ -289,7 +402,7 @@ def page_performance_pct(df_history):
     max_dd = df_history["dd_pct"].min()*100
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("累積報酬", f"{roi_pct:.2f}%")
+    col1.metric("累積報酬", f"{roi_pct:.2f}%",help="包含現金")
     col2.metric("ALPHA", f"{alpha_0050:.2f}%")
     col3.metric("最大回撤", f"{max_dd:,.2f}%")
 
@@ -346,7 +459,7 @@ def page_performance_pct(df_history):
 # ==========================================
 # 頁面 2：投組權益淨值
 # ==========================================
-def page_performance_nav(df_history):
+def page_performance_nav(df_history,df_record, df_price):
     st.title("累積權益(淨值)")
     if df_history.empty:
         st.warning("無數據")
@@ -356,24 +469,21 @@ def page_performance_nav(df_history):
     last_row = df_history.iloc[-1]
     tw = last_row['total_nav']  # 總權益 (市值+現金)
     ti = last_row['principal']  # 總投入 (初始+後來所有入金)
-    tp = tw - ti                # 股票總損益
-    
-    # 真實累積報酬率 (用淨值算的那一個，最準)
-    total_roi = last_row['roi_total'] * 100 
+    tp = tw - ti                # 股票總損益          
 
-    # 2. UI 渲染 (最低程度修改)
+    _, _, total_unrealized, total_realized = calculate_settlement_data(df_record, df_price)
+
     col1, col2, col3 = st.columns(3)
-    
-    # 顯示現在總共有多少錢
     col1.metric("總權益", f"${tw:,.0f}")
     
-    # 顯示純交易損益，並把報酬率放在 delta
+    # 3. 完美顯示你的 help
     col2.metric(
         "股票總損益", 
-        f"${tp:,.0f}", 
+        f"${tp:,.0f}",
+        help=f"未實現：${total_unrealized:,.0f}\n\n已實現：${total_realized:,.0f}"
     )
     
-    # 顯示總投入本金，並把「後來追加的部分」放在 delta
+    # 顯示總投入本金ta
     col3.metric(
         "累積追加投入",  
         f"{ti - init_cap:,.0f}",
@@ -410,18 +520,21 @@ def page_performance_nav(df_history):
     st.plotly_chart(fig_dd_twd, use_container_width=True)
 
 # ==========================================
-# 頁面 3：配置比例 (加入手續費校正現金池)
+# 頁面 3：配置比例 (雙視角切換 & 回傳權重)
 # ==========================================
 def page_allocation(df_record, df_price):
     st.title("目前配置比例")
     if df_record.empty:
         st.warning("無數據")
-        return
+        return {}
 
     df_trade = df_record[df_record['id'] != 'cash'].copy()
     latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict() if not df_price.empty else {}
 
-    labels, values = [], []
+    stock_labels, stock_values = [], []
+    pure_equity_mv = 0.0
+    
+    # 1. 計算純股票部位
     for aid in df_trade['id'].unique():
         sub = df_trade[df_trade['id'] == aid]
         shares = sub[sub['action'] == 'buy']['share'].sum() - sub[sub['action'] == 'sell']['share'].sum()
@@ -435,10 +548,13 @@ def page_allocation(df_record, df_price):
             if px > 0:
                 name = sub['name'].iloc[0] if 'name' in sub.columns else ""
                 label_str = f"{aid.upper()} {name}".strip()
-                labels.append(label_str)
-                values.append(shares * px)
+                mv = shares * px
+                
+                stock_labels.append(label_str)
+                stock_values.append(mv)
+                pure_equity_mv += mv
 
-    # 精準計算現金 (納入手續費與交易稅)
+    # 2. 精準計算現金池
     cash_rec = df_record[df_record['id'] == 'cash']
     principal = cash_rec['cash_flow'].sum()
     
@@ -453,24 +569,32 @@ def page_allocation(df_record, df_price):
     
     current_cash = principal - (buy_val.sum() + buy_fees.sum()) + (sell_val.sum() - sell_fees.sum())
 
-    if current_cash > 1:
-        labels.append("現金")
-        values.append(current_cash)
-
-    if not labels:
+    if not stock_labels and current_cash <= 1:
         st.info("無持倉配置")
-        return
+        return {}
 
-    fig = go.Figure(data=[go.Pie(
-        labels=labels, values=values, hole=.3, textinfo='label+percent',
-        hovertemplate="<b>%{label}</b><br>帳面價值: $%{value:,.0f}<br>佔比: %{percent}<extra></extra>",
-        marker=dict(colors=["#FFF2AF", '#FFB380', '#A3E4D7', "#B5D0E2", '#CCCCCC','#A996FE'])
-    )])
-    fig.update_layout(template="plotly_dark",height=400,margin=dict(t=20, b=20, l=20, r=20))
-    st.plotly_chart(fig, use_container_width=True)
+    # 3. 建立兩種圓餅圖的數據
+    total_labels = stock_labels.copy()
+    total_values = stock_values.copy()
+    if current_cash > 1:
+        total_labels.append("現金")
+        total_values.append(current_cash)
 
+    # 畫圖設定
+    pie_colors = ["#FFF2AF", '#FFB380', '#A3E4D7', "#B5D0E2", '#CCCCCC', '#A996FE']
+    fig = go.Figure()
+
+    fig.add_trace(go.Pie(
+        labels=total_labels, values=total_values, hole=.3, textinfo='label+percent',
+        hovertemplate="<b>%{label}</b><br>帳面價值: $%{value:,.0f}<br>總資產佔比: %{percent}<extra></extra>",
+        marker=dict(colors=pie_colors)
+    ))
+
+    if fig.data:
+        fig.update_layout(template="plotly_dark", height=400, margin=dict(t=20, b=20, l=20, r=20))
+        st.plotly_chart(fig, use_container_width=True)
 # ==========================================
-# 頁面 4：歷史紀錄結算 (加入獨立手續費欄位)
+# 頁面 4：歷史紀錄結算 (加入獨立手續費欄位與移動停利)
 # ==========================================
 def page_history(df_record, df_price):
     st.title("資產結算中心")
@@ -478,106 +602,10 @@ def page_history(df_record, df_price):
         st.warning("無數據")
         return
 
-    df_trade = df_record[df_record['id'] != 'cash'].copy()
-    latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict() if not df_price.empty else {}
+    # 1. 直接跟大腦拿算好的資料
+    unrealized_data, realized_data, total_unrealized, total_realized = calculate_settlement_data(df_record, df_price)
 
-    unrealized_data, realized_data = [], []
-
-    for aid in df_trade['id'].unique():
-        sub = df_trade[df_trade['id'] == aid].sort_values('date')
-        cum_shares = 0
-        total_cost = 0
-        shares_sold = 0
-        revenue = 0
-        
-        # 追蹤手續費
-        cum_buy_fee = 0
-        cum_sell_fee = 0
-        raw_sell_val = 0 # 追蹤純賣出價值以計算均價
-
-        stock_name = sub['name'].iloc[0] if 'name' in sub.columns else ""
-
-        for _, row in sub.iterrows():
-            trade_val = row['price'] * row['share']
-            if row['action'] == 'buy':
-                fee = int(trade_val * 0.001425)  # 買進手續費 0.1425%
-                cum_buy_fee += fee
-                cum_shares += row['share']
-                total_cost += trade_val + fee    # 成本 = 買價 + 手續費
-            elif row['action'] == 'sell':
-                fee = int(trade_val * 0.001425) + int(trade_val * 0.003) # 賣出手續費 + 交易稅
-                cum_sell_fee += fee
-                shares_sold += row['share']
-                raw_sell_val += trade_val
-                revenue += trade_val - fee       # 實際入帳 = 賣價 - 手續費
-
-        curr_shares = cum_shares - shares_sold
-        # 這裡的 avg_cost 已經包含買入手續費
-        avg_cost = total_cost / cum_shares if cum_shares > 0 else 0
-        avg_buy_fee = cum_buy_fee / cum_shares if cum_shares > 0 else 0
-        
-        yahoo_url = f"https://tw.stock.yahoo.com/quote/{aid}"
-
-        if shares_sold > 0:
-            # 賣出的總成本 (已包含對應比例的買入手續費)
-            sell_cost = shares_sold * avg_cost
-            r_pnl = revenue - sell_cost
-            r_roi_pct = (r_pnl / sell_cost) * 100 if sell_cost > 0 else 0.0
-            
-            if r_roi_pct > 0:
-                r_roi_str = f"▲ {r_roi_pct:.1f}%"
-            elif r_roi_pct < 0:
-                r_roi_str = f"▼ -{abs(r_roi_pct):.1f}%"
-            else:
-                r_roi_str = "− 0.0%"
-                
-            avg_sell_px = raw_sell_val / shares_sold
-            # 已實現總手續費 = 賣出股數攤提的買入手續費 + 實際發生的賣出手續費
-            realized_total_fee = (shares_sold * avg_buy_fee) + cum_sell_fee
-
-            realized_data.append({
-                "代號": yahoo_url,     
-                "名稱": stock_name,    
-                "累積報酬率": f"{r_roi_str}",
-                "已實現損益": round(r_pnl, 0),
-                "平均成本": round(avg_cost, 1), 
-                "賣出均價": f"{avg_sell_px:.1f}",
-                "買賣手續費": int(realized_total_fee), # 新增手續費欄位
-                "賣出股數": int(shares_sold), 
-                "回收現金": round(revenue, 0)
-            })
-
-        if curr_shares > 0:
-            px = latest_px.get(aid, 0.0)
-            mv = curr_shares * px
-
-            est_sell_fee = int(mv * 0.001425) + int(mv * 0.003)
-            # 未實現損益：目前市值 - (包含買入/賣出手續費的成本)
-            u_pnl = mv - (curr_shares * avg_cost) - est_sell_fee
-            roi_pct = (u_pnl / (curr_shares * avg_cost)) * 100 if avg_cost > 0 else 0.0
-
-            if roi_pct > 0:
-                roi_str = f"▲ {roi_pct:.1f}%"
-            elif roi_pct < 0:
-                roi_str = f"▼ -{abs(roi_pct):.1f}%"
-            else:
-                roi_str = "− 0.0%"
-                
-            unrealized_buy_fee = curr_shares * avg_buy_fee
-
-            unrealized_data.append({
-                "代號": yahoo_url,     
-                "名稱": stock_name,    
-                "累積報酬率":f"{roi_str}",
-                "未實現損益": round(u_pnl, 0),
-                "平均成本": round(avg_cost, 1), 
-                "最新市價": f"{px:.1f}", 
-                "買入手續費": int(unrealized_buy_fee), # 新增手續費欄位
-                "買入股數": int(curr_shares),
-                "當前市值": round(mv, 0),
-            })
-
-    # UI 魔法：攔截網址最後面的代號
+    # 2. UI 魔法：攔截網址最後面的代號
     column_config_setting = {
         "代號": st.column_config.LinkColumn(
             "代號", 
@@ -585,26 +613,19 @@ def page_history(df_record, df_price):
         )
     }
 
-    st.subheader("未實現損益")
+    # 3. 畫未實現表格
+    st.subheader(f"未實現損益 │ ${total_unrealized:,.0f}")
     if unrealized_data:
         df_un = pd.DataFrame(unrealized_data).sort_values("當前市值", ascending=False)
-        st.dataframe(
-            df_un, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config=column_config_setting
-        )
-    
+        st.dataframe(df_un, use_container_width=True, hide_index=True, column_config=column_config_setting)
+
     st.markdown("---")
-    st.subheader("已實現損益")
+
+    # 4. 畫已實現表格
+    st.subheader(f"已實現損益 │ ${total_realized:,.0f}")
     if realized_data:
         df_re = pd.DataFrame(realized_data)
-        st.dataframe(
-            df_re, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config=column_config_setting
-        )
+        st.dataframe(df_re, use_container_width=True, hide_index=True, column_config=column_config_setting)
 # ==========================================
 # 頁面 5：月度績效結算 (非累積)
 # ==========================================
@@ -658,7 +679,7 @@ def page_monthly_performance(df_history):
     with r1_col1:
         st.subheader("月報酬率")
         st.caption(f"Avg: {avg_ret:.1f}%  |  Med: {med_ret:.1f}%")
-        colors_ret = ["#FF7D7D" if val > 0 else "#A4FFA4" for val in monthly_end['monthly_ret_pct']]
+        colors_ret = ["#FD9292" if val > 0 else "#A4FFA4" for val in monthly_end['monthly_ret_pct']]
         fig_ret = go.Figure(go.Bar(
             x=monthly_end['month'], 
             y=monthly_end['monthly_ret_pct'], 
@@ -676,7 +697,7 @@ def page_monthly_performance(df_history):
     with r1_col2:
         st.subheader("月損益")
         st.caption(f"Avg: {avg_prof:,.0f}  |  Med: {med_prof:,.0f}")
-        colors_prof = ['#FF7D7D' if val > 0 else '#A4FFA4' for val in monthly_end['monthly_profit']]
+        colors_prof = ['#FD9292' if val > 0 else '#A4FFA4' for val in monthly_end['monthly_profit']]
         fig_prof = go.Figure(go.Bar(
             x=monthly_end['month'], 
             y=monthly_end['monthly_profit'], 
@@ -739,6 +760,64 @@ def page_monthly_performance(df_history):
     report_df = monthly_end[['month', 'monthly_ret_pct', 'monthly_alpha_pct', 'Sharpe', 'Sortino']].copy()
     report_df.columns = ['月份', '報酬率', 'Alpha', 'Sharpe', 'Sortino']
     st.dataframe(report_df.style.format({'報酬率': '{:.2f}%', 'Alpha': '{:.2f}%', 'Sharpe': '{:.2f}', 'Sortino': '{:.2f}'}), use_container_width=True, hide_index=True)
+
+# ==========================================
+# 模組 6：再平衡監控警報器 (純股 25% 閾值削回 20%)
+# ==========================================
+def check_rebalance_alerts(df_record, df_price):
+    if df_record.empty or df_price.empty:
+        return []
+
+    df_trade = df_record[df_record['id'] != 'cash'].copy()
+    latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict()
+    
+    holdings = {}
+    pure_equity_mv = 0.0
+    
+    for aid in df_trade['id'].unique():
+        sub = df_trade[df_trade['id'] == aid]
+        shares = sub[sub['action'] == 'buy']['share'].sum() - sub[sub['action'] == 'sell']['share'].sum()
+        
+        if shares > 0:
+            px = latest_px.get(aid, 0.0)
+            if px == 0.0:
+                last_buy = sub[sub['action'] == 'buy']
+                px = last_buy['price'].iloc[-1] if not last_buy.empty else 0.0
+            
+            if px > 0:
+                mv = shares * px
+                name = sub['name'].iloc[0] if 'name' in sub.columns else ""
+                holdings[aid] = {'name': name, 'shares': shares, 'price': px, 'mv': mv}
+                pure_equity_mv += mv
+                
+    alerts = []
+    if pure_equity_mv > 0:
+        for aid, data in holdings.items():
+            weight = data['mv'] / pure_equity_mv
+            if weight > 0.25:
+                # 代入機構再平衡公式：X = (V_A - 0.2 * V_total) / 0.8
+                sell_value = (data['mv'] - 0.20 * pure_equity_mv) / 0.8
+                sell_shares = int(sell_value / data['price'])
+                alerts.append(
+                    f"【指令 : 重構】{aid} {data['name']} 投組權重大於25% (目前{weight*100:.1f}%)，需賣出市值 {sell_value:,.0f}(約需賣出 {sell_shares} 股)"
+                )
+    return alerts
+
+# ==========================================
+# 模組 7：大盤波動率斷路警報 (0050 20日年化波動 > 0.3)
+# ==========================================
+def check_market_volatility_alerts(df_0050, threshold=0.30):
+    if df_0050.empty or 'realized_vol' not in df_0050.columns:
+        return []
+
+    # 直接拿最後一筆已經算好的數值
+    latest_vol = df_0050['realized_vol'].iloc[-1]
+    
+    if pd.isna(latest_vol): return []
+
+    if latest_vol > threshold:
+        return [f"【指令 : 熔毀 】 大盤波動率超過{threshold*100:.0f}% (目前:{latest_vol*100:.1f}%)，需砍倉1/2"]
+    return []
 # ==========================================
 # 主程式
 # ==========================================
@@ -746,28 +825,38 @@ def main():
     # 1. 建立一個暫存佔位符
     loading_placeholder = st.empty()
     
+    #資料初始化與佔位
     with loading_placeholder.container():
         # st.image("assets/fox_loading.gif", width=200) 
         st.write("🦊請稍候...")
 
     df_record, df_price, df_0050, df_00631L = load_data()
     df_history = calculate_daily_history(df_record, df_price, df_0050, df_00631L)
-
     # 3. 讀取完畢後，把佔位符清空，換成主程式內容
     loading_placeholder.empty()
 
-    with st.sidebar:
-        current_nav = df_history['total_nav'].iloc[-1]
-        target_progress = (current_nav / 10000000) * 100
+    #提醒與通知
+    # 第一層：大盤波動率斷路器 (防禦黑天鵝)
+    vol_alerts = check_market_volatility_alerts(df_0050)
+    for v_alert in vol_alerts:
+        st.warning(v_alert) # 熔毀指令
 
-        st.title(f"KITSUNE KERNEL")
+    rebalance_alerts = check_rebalance_alerts(df_record, df_price)
+    for rb_alert in rebalance_alerts:
+        st.warning(rb_alert) # 重構指令
+
+    with st.sidebar:
+        # current_nav = df_history['total_nav'].iloc[-1]
+        # target_progress = (current_nav / 10000000) * 100
+
+        st.title("KITSUNE KERNEL")
         st.caption("")
         selection = st.radio(f"選單",["累積報酬率", "累積權益", "目前配置", "損益結算中心","單月績效報告"])
 
     if selection == "累積報酬率":
         page_performance_pct(df_history)
     elif selection == "累積權益":
-        page_performance_nav(df_history)
+        page_performance_nav(df_history,df_record,df_price)
     elif selection == "目前配置":
         page_allocation(df_record, df_price)
     elif selection == "損益結算中心":

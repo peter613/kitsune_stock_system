@@ -31,7 +31,7 @@ def create_cbm(version=None):
     feature_cols =  ["sma60", "sma240",  "adx", "kama","breakout_20", "breakout_240", 
                     "trust_in_5","r2_60", "yoy", "yoy_ma3_bias",
 					"amount60",
-                    'amount20',"sma20","r2_20","t_f_sync",#'atr',"mom",
+                    'amount20',"sma20","r2_20","t_f_sync",#'atr',#"mom",
 					]
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
 
