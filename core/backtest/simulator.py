@@ -66,7 +66,7 @@ def backtester(version='v16', select_rank=[c for c in range(1,6)], benchmark='00
     
     INITIAL_CAPITAL = 1000000
     TRANSACTION_COST = 0.005
-    FIXED_STOP_LOSS = 0.99
+    FIXED_STOP_LOSS = 0.20#當作股災保險
     BALANCE = 0.25
     VOL_THRESHOLD = 0.30
 

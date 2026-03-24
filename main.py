@@ -8,6 +8,7 @@ import config
 # === 導入新版 Google GenAI SDK ===
 from google import genai
 from google.genai import types
+import config
 
 #===private key===
 from dotenv import load_dotenv
@@ -100,7 +101,7 @@ def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
 def open_dashboard() -> str:
     """啟動 Streamlit 視覺化儀表板/戰情室/dashboard。"""
     print("啟動儀表板...")
-    cmd = 'start cmd /k "streamlit run dashboard.py"'
+    cmd = f'start cmd /k "streamlit run {config.DASHBOARD_DIR}/main.py"'
     subprocess.Popen(cmd, shell=True)
     return "儀表板已成功在背景啟動。"
 
