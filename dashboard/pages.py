@@ -30,7 +30,7 @@ def page_performance_pct(df_history):
 
     col1, col2, col3 = st.columns(3)
     col1.metric("累積報酬", f"{roi_pct:.2f}%", help="包含現金")
-    col2.metric("ALPHA",    f"{alpha_0050:.2f}%")
+    col2.metric("超額報酬",  f"{alpha_0050:.2f}%")
     col3.metric("最大回撤",  f"{max_dd:,.2f}%")
 
     # ── 主要折線圖 ────────────────────────

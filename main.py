@@ -101,7 +101,7 @@ def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
 def open_dashboard() -> str:
     """啟動 Streamlit 視覺化儀表板/戰情室/dashboard。"""
     print("啟動儀表板...")
-    cmd = f'start cmd /k "streamlit run {config.DASHBOARD_DIR}/main.py"'
+    cmd = f'start cmd /k "streamlit run dashboard/main.py"'
     subprocess.Popen(cmd, shell=True)
     return "儀表板已成功在背景啟動。"
 
@@ -223,6 +223,22 @@ def main():
             type_effect("程式結束。")
             time.sleep(1.5)
             break
+
+        # === [手動指令] ===
+        if user_input == "/update":
+            print("\n[系統] 啟動手動強制更新流程...")
+            res = update_database() # 直接呼叫函式
+            print(f"結果: {res}")
+            continue # 跳過後面的 AI 連線
+            
+        elif user_input == "/dashboard":
+            print("\n[系統] 啟動手動強制開啟儀表板...")
+            res = open_dashboard() # 直接呼叫函式
+            print(f"結果: {res}")
+            continue # 跳過後面的 AI 連線
+        # ========================================
+
+        # === [AI指令] ===
         try:  
             print("\n⛩️ Kitsune 推演中，請稍候...")
             response = chat.send_message(user_input)
