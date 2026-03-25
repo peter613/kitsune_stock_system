@@ -191,7 +191,7 @@ def page_allocation(df_record, df_price):
         total_values.append(current_cash)
 
     # ── 圓餅圖 ────────────────────────────
-    pie_colors = ["#FFF2AF", '#FFB380', '#A3E4D7', "#B5D0E2", '#CCCCCC', '#A996FE']
+    pie_colors = ["#FFF2AF", '#FFB380', "#8FE7D6", "#B5D0E2", '#CCCCCC', '#A996FE']
     fig = go.Figure()
     fig.add_trace(go.Pie(
         labels=total_labels, values=total_values, hole=.3, textinfo='label+percent',

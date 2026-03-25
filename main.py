@@ -101,7 +101,11 @@ def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
 def open_dashboard() -> str:
     """啟動 Streamlit 視覺化儀表板/戰情室/dashboard。"""
     print("啟動儀表板...")
-    cmd = f'start cmd /k "streamlit run dashboard/main.py"'
+    # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
+
+    target_path = r"C:\Users\Lynn610\Documents\kitsune_stock_system"
+    cmd = f'start /D "{target_path}" cmd /k "set PYTHONPATH=. && streamlit run {config.DASHBOARD_DIR}/app.py"'
+    
     subprocess.Popen(cmd, shell=True)
     return "儀表板已成功在背景啟動。"
 

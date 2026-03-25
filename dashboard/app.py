@@ -73,22 +73,29 @@ _CSS = """
 [data-testid="stSidebar"] .st-emotion-cache-6qob1r {
     font-size: 1.1rem !important;
 }
-div[data-testid="stAlertContainer"] {
-    background-color: #1A2B4C !important;
-    padding-top: 1rem !important;
-    padding-bottom: 1rem !important;
-    height: 100% !important;
-    width: 100% !important;
-}
-div[data-testid="stAlert"] p {
-    color: #ffffff !important;
-    font-size: 1.0rem !important;
-    font-weight: 700 !important;
-    letter-spacing: 3.0px !important;
-}
 </style>
 """
+def alert(message):
+    """自定義深藍色戰情警報，完全跳過 Streamlit 內建組件"""
+    html_code = f"""
+    <div style="
+        background-color: #1A2B4C;
+        color: #ffffff;
+        padding: 15px 20px;
+        border: none;
+        margin: 50px 20px 50px 0px;
+        font-weight: 600;
+        font-size: 1.1rem;
+        letter-spacing: 2px;
+    ">
+        {message}
+    </div>
+    """
+    st.markdown(html_code, unsafe_allow_html=True)
 
+#        border-radius: 8px;        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+#        line-height: 1.5;
+#        font-family: sans-serif;
 # ──────────────────────────────────────────
 # 頁面路由對應表
 # ──────────────────────────────────────────
@@ -119,11 +126,11 @@ def main():
     unrealized_data, _, _, _ = calculate_settlement_data(df_record, df_price)
 
     for msg in check_market_volatility_alerts(df_0050):
-        st.warning(msg)
+        alert(msg)
     for msg in check_rebalance_alerts(df_record, df_price):
-        st.warning(msg)
+        alert(msg)
     for msg in check_stoploss_alerts(unrealized_data):
-        st.warning(msg)
+        alert(msg)
 
     # 3. Sidebar 導覽
     with st.sidebar:
