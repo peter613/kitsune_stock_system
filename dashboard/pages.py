@@ -244,7 +244,7 @@ def page_monthly_performance(df_history):
         return
 
     df          = df_history.copy()
-    df['month'] = df['date'].dt.strftime('%Y-%m')
+    df['month'] = (df['date'] - pd.Timedelta(days=10)).dt.strftime('%Y-%m')#後移10天，也就是大概11號
     df['daily_ret'] = df['roi_total'].diff().fillna(0)
     m_groups    = df.groupby('month')
     monthly_end = m_groups.last().reset_index()
