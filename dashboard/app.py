@@ -15,6 +15,7 @@ from engine import (
     check_rebalance_alerts,
     check_market_volatility_alerts,
     check_stoploss_alerts,
+    check_bear_market_alerts
 )
 from pages import (
     page_performance_pct,
@@ -34,16 +35,19 @@ _CSS = """
 [data-testid="stSidebar"] {
     background-color: #fcf5ed !important;
 }
+
 [data-testid="stSidebar"] h1 {
-    margin-top: -2rem !important;
-    padding-top: 2px !important;
+    margin-top: -5rem !important;
+    padding-top: 0px !important;
 }
+
 [data-testid="stAppViewBlockContainer"] {
     padding-top: 0rem !important;
 }
 .stApp h1 {
     font-size: 1.5rem !important;
     padding-bottom: 0.8rem !important;
+    margin-top: 0rem !important;
     font-weight: 700 !important;
     color: #1a1a1a;
 }
@@ -83,8 +87,8 @@ def alert(message):
         color: #ffffff;
         padding: 15px 20px;
         border: none;
-        margin: 50px 20px 50px 0px;
-        font-weight: 600;
+        margin: 50px 20px 10px 0px;
+        font-weight: 500;
         font-size: 1.1rem;
         letter-spacing: 2px;
     ">
@@ -130,6 +134,8 @@ def main():
     for msg in check_rebalance_alerts(df_record, df_price):
         alert(msg)
     for msg in check_stoploss_alerts(unrealized_data):
+        alert(msg)
+    for msg in check_bear_market_alerts(df_0050):
         alert(msg)
 
     # 3. Sidebar 導覽

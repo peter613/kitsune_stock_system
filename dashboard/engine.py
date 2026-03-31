@@ -71,8 +71,7 @@ def load_data():
         df = _standardize(df)
         df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
         df.columns = [c.lower() for c in df.columns]
-        p_col = 'price' if 'price' in df.columns else 'close'
-        df['daily_return']  = df[p_col].pct_change()
+        df['daily_return']  = df['close'].pct_change()
         df['realized_vol']  = df['daily_return'].rolling(window=20).std() * (252 ** 0.5)
         return df[df['date'] >= START_DATE].copy()
 
@@ -331,3 +330,23 @@ def check_stoploss_alerts(unrealized_data, threshold=-20.0):
                 f"【指令 : 滅止 】{item['代號']} {item['名稱']} 已觸發 -20% 停損保險機制"
             )
     return alerts
+
+def check_bear_market_alerts(df_0050, threshold=-0.20):
+    """0050 從最高點回撤 >= 20% 進入熊市警報"""
+    if df_0050.empty or 'close' not in df_0050.columns:
+        return []
+        
+    # 找出區間最高價與最新收盤價
+    max_price = df_0050['close'].max()
+    latest_price = df_0050['close'].iloc[-1]
+    
+    if max_price == 0:
+        return []
+        
+    # 計算最大回撤 (Drawdown)
+    drawdown = (latest_price - max_price) / max_price
+    
+    if drawdown <= threshold:
+        return [f"【指令 : 凜冬 】 大盤已從高點回撤 {drawdown*100:.1f}%，正式進入熊市，全面砍倉。"]
+    
+    return []
