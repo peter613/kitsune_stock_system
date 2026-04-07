@@ -30,18 +30,37 @@ HEADERS_TPEX = {
     }
 
 # ==========================================
-# Part 1: 上市 (TWSE)
+# 共通共用函式
+# ==========================================
+def retry_crwler(url, headers, timeout=10, max_retries=2, sleep_range=(2, 5)):
+    for attempt in range(max_retries):
+        try:
+            time.sleep(random.uniform(*sleep_range))
+            res = session.get(url, headers=headers, timeout=timeout, verify=False)
+            res.raise_for_status() 
+            return res
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"連線重試 {max_retries} 次均失敗: {e}")
+                return None
+            print(f"  > 遭遇連線異常，5 秒後進行重試 ({attempt+2}/{max_retries})...")
+            time.sleep(5)
+    return None
+
+# ==========================================
+# 上市 (TWSE)
 # ==========================================
 def basic_twse(date_str):
     print(f"[上市] 下載收盤行情...")
     url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={date_str}&type=ALLBUT0999&response=json"
 
+    res = retry_crwler(url, HEADERS_TWSE, sleep_range=(2, 5))
+    if not res: return pd.DataFrame()
+    
     try:
-        time.sleep(random.uniform(2, 5))
-        res = session.get(url, headers=HEADERS_TWSE,timeout=20,verify=False)
         json_data = res.json()
     except Exception as e:
-        print(f'{e}')
+        print(f"[解析錯誤]: {e}")
         return pd.DataFrame()
 
     required_cols = ['date', 'id', 'name', 'volume', 'amount', 'open', 'high', 'low', 'close']
@@ -75,13 +94,12 @@ def chips_twse(date_str):
     print(f"[上市] 下載外資/投信籌碼...")
     url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={date_str}&selectType=ALL&response=html"
 
+    res = retry_crwler(url, HEADERS_TWSE, sleep_range=(2, 5))
+    if not res: return None
+    res.encoding = 'utf-8' 
+            
     try:
-        time.sleep(random.uniform(2, 5))
-        res = session.get(url, headers=HEADERS_TWSE, timeout=10,verify=False)
-        res.encoding = 'utf-8' 
-        
         dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
-        
         df_raw = dfs[0] 
         
         df = df_raw.iloc[:, [0, 1, 4, 10]].copy() 
@@ -92,7 +110,6 @@ def chips_twse(date_str):
         df = df[df['id'].str.len() == 4]
         
         df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
-
         df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
 
         df['Foreign_Net']/=1000
@@ -100,9 +117,84 @@ def chips_twse(date_str):
         return df
     
     except Exception as e:
-        print(f"[連線錯誤] 無法取得 HTML: {e}")
+        print(f"[解析錯誤] 無法取得/解析 HTML: {e}")
         return None
+
+# ==========================================
+# 上櫃 (tpex)
+# ==========================================
+def basic_tpex(date_str):
+    print(f"[上櫃] 下載收盤行情...")
+    year = date_str[:4]
+    month = date_str[4:6]
+    day = date_str[6:8]
+    url = f'https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date={year}%2F{month}%2F{day}&type=EW&id=&response=html&order=0&sort=asc'
+
+    res = retry_crwler(url, HEADERS_TPEX, sleep_range=(3, 7))
+    if not res: return None
+    res.encoding = 'utf-8' 
+
+    try:
+        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
+    except Exception as e:
+        print(f"無法解析 HTML 表格: {e}")
+        return None
+        
+    df_raw = dfs[0] 
     
+    df = df_raw.iloc[:, [0, 1, 2, 4, 5, 6, 7,8]].copy() 
+    df.columns = ['id', 'name', 'close','open','high','low','volume','amount'] 
+    
+    df['id'] = df['id'].astype(str).str.strip()
+    df = df[~df['id'].str.startswith('00')]
+    df = df[df['id'].str.len() == 4]
+    
+    df[['close','open','high','low','volume','amount']] = df[['close','open','high','low','volume','amount']].apply(pd.to_numeric, errors='coerce')
+    df[['close','open','high','low','volume','amount']] = df[['close','open','high','low','volume','amount']].fillna(0)
+
+    df['volume'] /= 1000
+    df['amount'] /= 1000
+    df.insert(0, 'date', date_str)
+
+    return df
+
+def chips_tpex(date_str):
+    print(f"[上櫃] 下載外資/投信籌碼...")
+    year = date_str[:4]
+    month = date_str[4:6]
+    day = date_str[6:8]
+    url = f'https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=AL&date={year}%2F{month}%2F{day}&id=&response=html'
+
+    res = retry_crwler(url, HEADERS_TPEX, sleep_range=(3, 7))
+    if not res: return None
+    res.encoding = 'utf-8' 
+
+    try:
+        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
+    except Exception as e:
+        print(f"無法解析 HTML 表格: {e}")
+        return None
+        
+    df_raw = dfs[0] 
+    
+    df = df_raw.iloc[:, [0, 1, 4, 13]].copy() 
+    df.columns = ['id', 'name', 'Foreign_Net','Trust_Net'] 
+    
+    df['id'] = df['id'].astype(str).str.strip()
+    df = df[~df['id'].str.startswith('00')]
+    df = df[df['id'].str.len() == 4]
+    
+    df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
+    df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
+
+    df['Foreign_Net']/=1000
+    df['Trust_Net']/=1000
+    return df
+
+# ==========================================
+# getdata
+# ==========================================
+
 def get_twse_data(date_str):
     
     df_b = basic_twse(date_str)
@@ -124,104 +216,6 @@ def get_twse_data(date_str):
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
     return df
 
-# ==========================================
-# Part 2: 上櫃 (tpex)
-# ==========================================
-def basic_tpex(date_str):
-    print(f"[上櫃] 下載收盤行情...")
-    year = date_str[:4]
-    month = date_str[4:6]
-    day = date_str[6:8]
-    url = f'https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date={year}%2F{month}%2F{day}&type=EW&id=&response=html&order=0&sort=asc'
-
-    # 重試迴圈區塊 
-    for attempt in range(2):
-        try:
-            time.sleep(random.uniform(3, 7)) # 稍微拉長間隔
-            res = session.get(url, headers=HEADERS_TPEX, timeout=20, verify=False)
-            res.raise_for_status() # 檢查是否有 4xx/5xx 錯誤
-            res.encoding = 'utf-8' 
-            break 
-        except Exception as e:
-            if attempt == 1:
-                print(f"上櫃收盤重試 2 次均失敗: {e}")
-                return None
-            print(f"  > 遭遇強制斷線，5 秒後進行重試 ({attempt+2}/2)...")
-            time.sleep(5)
-
-    # 資料處理區塊 
-    try:
-        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
-    except Exception as e:
-
-        print(f"無法解析 HTML 表格: {e}")
-        return None
-        
-    df_raw = dfs[0] 
-    
-    df = df_raw.iloc[:, [0, 1, 2, 4, 5, 6, 7,8]].copy() 
-    df.columns = ['id', 'name', 'close','open','high','low','volume','amount'] 
-    
-    df['id'] = df['id'].astype(str).str.strip()
-    df = df[~df['id'].str.startswith('00')]
-    df = df[df['id'].str.len() == 4]
-    
-    df[['close','open','high','low','volume','amount']] = df[['close','open','high','low','volume','amount']].apply(pd.to_numeric, errors='coerce')
-    df[['close','open','high','low','volume','amount']] = df[['close','open','high','low','volume','amount']].fillna(0)
-
-    df['volume'] /= 1000
-    df['amount'] /= 1000
-
-    df.insert(0, 'date', date_str)
-
-    return df
-
-
-def chips_tpex(date_str):
-    print(f"[上櫃] 下載外資/投信籌碼...")
-    year = date_str[:4]
-    month = date_str[4:6]
-    day = date_str[6:8]
-    url = f'https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=AL&date={year}%2F{month}%2F{day}&id=&response=html'
-
-    for attempt in range(2):
-        try:
-            time.sleep(random.uniform(3, 7)) # 稍微拉長間隔
-            res = session.get(url, headers=HEADERS_TPEX, timeout=20, verify=False)
-            res.raise_for_status() # 檢查是否有 4xx/5xx 錯誤
-            res.encoding = 'utf-8' 
-            break 
-        except Exception as e:
-            if attempt == 1:
-                print(f"上櫃籌碼重試 2 次均失敗: {e}")
-                return None
-            print(f"  > 遭遇強制斷線，5 秒後進行重試 ({attempt+2}/2)...")
-            time.sleep(5)
-
-    # 資料處理區塊 
-    try:
-        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
-    except Exception as e:
-        print(f"無法解析 HTML 表格: {e}")
-        return None
-        
-    df_raw = dfs[0] 
-    
-    df = df_raw.iloc[:, [0, 1, 4, 13]].copy() 
-    df.columns = ['id', 'name', 'Foreign_Net','Trust_Net'] 
-    
-    df['id'] = df['id'].astype(str).str.strip()
-    df = df[~df['id'].str.startswith('00')]
-    df = df[df['id'].str.len() == 4]
-    
-    df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
-
-    df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
-
-    df['Foreign_Net']/=1000
-    df['Trust_Net']/=1000
-    return df
-    
 def get_tpex_data(date_str):
     
     df_b = basic_tpex(date_str)
@@ -369,9 +363,10 @@ if __name__ == "__main__":
     #回補資料
     #===========
     # dates_to_fix = [
-    #         '20260302', '20260303',
-    #         '20260304', '20260305', 
-    #         '20260306', '20260309',
+    #         '2026-03-02', '2026-03-03',
+    #         '2026-03-04', '2026-03-05', 
+    #         '2026-03-06', '2026-03-09',
     #     ]
+    #     backfill(dates_to_fix)
     # backfill(dates_to_fix)
         

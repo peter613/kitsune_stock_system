@@ -37,7 +37,7 @@ def yf_download(ticker_code: str, start_d=None, end_d=None, period=None) -> pd.D
         print(f"yfinance 抓取錯誤: {e}")
     return df
 
-def update_0050(specific_date="2025-12-01"):
+def update_0050(specific_date="2025-01-01"):
     file_path = config.DATABASE_DIR / "0050.csv"
 
     # 1. 抓取全量全新資料

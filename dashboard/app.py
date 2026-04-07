@@ -46,15 +46,16 @@ _CSS = """
 }
 .stApp h1 {
     font-size: 1.5rem !important;
+    padding-top: 2.0rem !important;
     padding-bottom: 0.8rem !important;
     margin-top: 0rem !important;
     font-weight: 700 !important;
     color: #1a1a1a;
 }
 .stApp h3 {
-    font-size: 1.1rem !important;
+    font-size: 1.2rem !important;
     margin-top: -5px !important;
-    padding-bottom: 0.6rem !important;
+    padding-bottom: 0.8rem !important;
     font-weight: 400 !important;
 }
 [data-testid="stMetricLabel"] p {
@@ -68,11 +69,17 @@ _CSS = """
     font-size: 2.0rem !important;
     font-weight: 700 !important;
     color: #C0392B !important;
+    padding-top: 0.3rem !important;
 }
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+[data-testid="stSidebar"]{
     color: #1a1a1a !important;
     font-size: 1.05rem !important;
-    margin-bottom: 8px !important;
+    margin-bottom: 10px !important;
+}
+[data-testid="stMarkdownContainer"] p {
+    color: #1a1a1a !important;
+    font-size: 1.25rem !important;
+    margin-bottom: 5px !important;
 }
 [data-testid="stSidebar"] .st-emotion-cache-6qob1r {
     font-size: 1.1rem !important;

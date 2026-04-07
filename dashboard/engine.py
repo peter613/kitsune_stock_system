@@ -86,78 +86,110 @@ def load_data():
 # ──────────────────────────────────────────
 @st.cache_data
 def calculate_daily_history(df_record, df_price, df_0050, df_00631L):
+    # 防呆機制：若無交易紀錄則回傳空表
     if df_record.empty:
         return pd.DataFrame()
 
+    # 取得有價格數據的所有交易日排序列表
     dates = sorted(df_price['date'].dropna().unique())
     if not dates:
         dates = sorted(df_record['date'].unique())
 
+    # 紀錄大盤與槓桿ETF的初始價格，作為後續計算基準線報酬的起點
     p0_0050   = df_0050['close'].iloc[0]   if not df_0050.empty   else 1.0
     p0_00631L = df_00631L['close'].iloc[0] if not df_00631L.empty else 1.0
 
-    total_units  = 0.0
-    nav_per_unit = 1.0
+    # 初始化淨值計算系統的核心變數
+    total_units  = 0.0  # 總持有單位數
+    nav_per_unit = 1.0  # 每單位淨值 (初始預設為 1.0)
     history      = []
 
     for d in dates:
+        # 篩選出截至日期 d 為止的所有歷史交易紀錄
         rec_d = df_record[df_record['date'] <= d]
         if rec_d.empty:
             continue
 
+        # 取得截至日期 d 為止，各檔股票的「最新」收盤價字典
         px_d        = df_price[df_price['date'] <= d].groupby('id').tail(1).set_index('id')['close'].to_dict()
+        
+        # 處理現金流與本金
         cash_rec    = rec_d[rec_d['id'] == 'cash']
-        principal   = cash_rec['cash_flow'].sum()
-        net_cf_today= cash_rec[cash_rec['date'] == d]['cash_flow'].sum()
+        principal   = cash_rec['cash_flow'].sum() # 歷史累積總投入本金
+        net_cf_today= cash_rec[cash_rec['date'] == d]['cash_flow'].sum() # "當日"發生的淨現金流 (入金為正，出金為負)
+        
+        # 處理股票交易紀錄
         trades      = rec_d[rec_d['id'] != 'cash'].copy()
-        trades['val'] = trades['price'] * trades['share']
+        trades['val'] = trades['price'] * trades['share'] # 交易絕對金額 = 價格 * 股數
 
         # ── 子投組計算 (含手續費 + 預扣賣出稅費) ──
+        # 此閉包函數用於計算不同標籤 (AI, Other, 或總體) 的市值與損益
         def _calc_sub(label_filter):
             sub = trades[trades['label'] == label_filter] if label_filter else trades
             if sub.empty:
                 return 0.0, 0.0, 0.0
+            
             buy_mask  = sub['action'] == 'buy'
             sell_mask = sub['action'] == 'sell'
+            
+            # 計算已實現交易的摩擦成本 (買進手續費 0.1425%，賣出手續費 0.1425% + 證交稅 0.3%)
             buy_fees  = (sub[buy_mask]['val']  * 0.001425).astype(int)
             sell_fees = (sub[sell_mask]['val'] * 0.001425).astype(int) + (sub[sell_mask]['val'] * 0.003).astype(int)
+            
             buy_cost      = sub[buy_mask]['val'].sum()  + buy_fees.sum()
             sell_revenue  = sub[sell_mask]['val'].sum() - sell_fees.sum()
-            net_flow      = sell_revenue - buy_cost
+            net_flow      = sell_revenue - buy_cost # 已實現損益加上投入成本的淨流動
+            
             mv = 0.0
+            # 結算各檔股票在日期 d 的未實現市值
             for aid in sub['id'].unique():
                 a_sub  = sub[sub['id'] == aid]
                 shares = a_sub[a_sub['action'] == 'buy']['share'].sum() - a_sub[a_sub['action'] == 'sell']['share'].sum()
                 if shares > 0:
-                    raw_mv = shares * px_d.get(aid, 0.0)
+                    raw_mv = shares * px_d.get(aid, 0.0) # 原始市值
+                    
+                    # 依據股票代碼判斷證交稅率 (00開頭的ETF稅率為 0.1%，一般股票為 0.3%)
                     if str(aid).startswith('00'):
                         est_sell_fee = int(raw_mv * 0.001425) + int(raw_mv * 0.001)
                     else:
                         est_sell_fee = int(raw_mv * 0.001425) + int(raw_mv * 0.003)
+                    
+                    # 市值需預扣未來的賣出摩擦成本，確保資產估值不被高估
                     mv += (raw_mv - est_sell_fee)
+            
+            # 單一子投組的簡單報酬率 (市值 + 淨現金流) / 總買入成本
             roi = (mv + net_flow) / buy_cost if buy_cost > 0 else 0.0
             return mv, net_flow, roi
 
         mv_ai,  _, roi_ai  = _calc_sub('ai')
         mv_oth, _, roi_oth = _calc_sub('other')
-        mv_tot, flow_tot, _= _calc_sub(None)
+        mv_tot, flow_tot, _= _calc_sub(None) # 計算整體股票部位
 
         # ── NAV 淨值法更新 ──────────────────
+        # current_cash = 累積投入本金 + 股票買賣結算後的資金盈虧
         current_cash = principal + flow_tot
-        total_nav    = current_cash + mv_tot
-
+        # 總淨值 = 帳戶剩餘現金 + 股票當下市值
+        total_nav    = current_cash + mv_tot 
+        
+        # 單位數與淨值計算核心邏輯：確保入金/出金不會影響報酬率曲線
         if total_units == 0.0 and net_cf_today > 0:
+            # 系統初次建倉
             nav_per_unit = 1.0
             total_units  = net_cf_today / nav_per_unit
         elif total_units > 0:
+            # 先扣除當日出入金，計算真實的資產增長淨值
             nav_before_cf = total_nav - net_cf_today
             nav_per_unit  = nav_before_cf / total_units
+            
+            # 若當日有資金進出，以最新的淨值折算為單位數進行增減
             if net_cf_today != 0:
                 total_units += net_cf_today / nav_per_unit
 
+        # 總投組真實時間加權報酬率
         roi_total = nav_per_unit - 1.0 if total_units > 0 else 0.0
 
         # ── 基準線報酬 ──────────────────────
+        # 計算大盤與槓桿ETF截至當日的累積報酬，供圖表對比
         curr_0050   = df_0050[df_0050['date'] <= d]['close'].iloc[-1]   if not df_0050[df_0050['date'] <= d].empty   else p0_0050
         curr_00631L = df_00631L[df_00631L['date'] <= d]['close'].iloc[-1] if not df_00631L[df_00631L['date'] <= d].empty else p0_00631L
         roi_0050    = (curr_0050   - p0_0050)   / p0_0050
@@ -171,12 +203,14 @@ def calculate_daily_history(df_record, df_price, df_0050, df_00631L):
         })
 
     df_res = pd.DataFrame(history)
+    
+    # 計算最大回撤 (Maximum Drawdown) 供風險控管檢視
     if not df_res.empty:
-        df_res['max_nav'] = df_res['total_nav'].cummax()
-        df_res['dd_pct']  = (df_res['total_nav'] - df_res['max_nav']) / df_res['max_nav']
-        df_res['dd_twd']  = df_res['total_nav'] - df_res['max_nav']
+        df_res['max_nav'] = df_res['total_nav'].cummax() # 歷史最高淨值
+        df_res['dd_pct']  = (df_res['total_nav'] - df_res['max_nav']) / df_res['max_nav'] # 回撤百分比
+        df_res['dd_twd']  = df_res['total_nav'] - df_res['max_nav'] # 回撤絕對金額
+        
     return df_res
-
 
 # ──────────────────────────────────────────
 # 模組 3：資產結算引擎 (供各頁面共用)
