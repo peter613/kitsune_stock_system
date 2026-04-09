@@ -5,6 +5,7 @@ from talib import *
 from datetime import datetime
 import gc
 import config
+from black_list import *
 
 def create_training(version='v14', years_10=True, stock_filter=True):
     file_save_name = config.FEATURES_DIR / f'train_{version}.csv'
@@ -38,53 +39,11 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         # ---------------------------------------------------------
         # 非電子/傳統產業黑名單 (排除低成長、缺乏科技動能與投信作帳特性的類股)
         # ---------------------------------------------------------
-        black_prefixes = (
-            # 1. 原物料與基礎工業
-            '11', # 水泥工業
-            '13', # 塑膠工業
-            '14', # 紡織纖維
-            '18', # 玻璃陶瓷
-            '19', # 造紙工業
-            '20', # 鋼鐵工業
-            '21', # 橡膠工業
+        get_black_prefixes = black_prefixes()
+        get_black_ids = black_ids()
 
-            # 2. 民生、消費與觀光
-            '12', # 食品工業
-            '22', # 汽車工業
-            '27', # 觀光事業 (上市/上櫃)
-            '29', # 貿易百貨 (上市)
-            '59', # 貿易百貨 (上櫃)
-
-            # 3. 化工、生技與醫療 (投信偶爾著墨，但估值邏輯與電子股完全不同)
-            '17', # 化學工業 / 傳統生技
-            '41', # 生技醫療業
-            '47', # 化學工業 (上櫃)
-            '65', # 燃氣油電 (如6505台塑化) / 新興生技醫療
-
-            # 4. 傳統機電與電纜
-            '15', # 電機機械 (上市)
-            '16', # 電器電纜
-            '45', # 電機機械 (上櫃，如4532瑞智)
-
-            # 5. 營建與航運
-            '25', # 建材營造 (上市)
-            '55', # 建材營造 (上櫃)
-            '26', # 航運業
-
-            # 6. 金融保險與證券 (股本極大、波動極低，會干擾機器學習的特徵權重)
-            '28', # 金融保險 (上市，如各大金控)
-            '58', # 金融保險 (上櫃/特定銀行)
-            '60', # 證券業
-
-            # 7. 其他綜合類股 (包含許多冷門股或控股公司)
-            '84', # 其他業 / 觀光生技 (如8454富邦媒)
-            '89', # 其他業 (上櫃冷門股)
-            '99'  # 其他業 (上市綜合類，如9904寶成)
-        )
-        black_ids = ('2412', '3045', '4904', '8454', '2353', '2357','6757')
-
-        df = df[~df['id'].str.startswith(black_prefixes) & ~df['id'].isin(black_ids)].copy()
-        df_revenue = df_revenue[~df_revenue['id'].str.startswith(black_prefixes) & ~df_revenue['id'].isin(black_ids)].copy()
+        df = df[~df['id'].str.startswith(get_black_prefixes) & ~df['id'].isin(get_black_ids)].copy()
+        df_revenue = df_revenue[~df_revenue['id'].str.startswith(get_black_prefixes) & ~df_revenue['id'].isin(get_black_ids)].copy()
 
     # ---------------------------------------------------------
     # 3. 時間切割 (10年長度 + 緩衝期)

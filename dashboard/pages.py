@@ -195,11 +195,19 @@ def page_allocation(df_record, df_price):
     fig = go.Figure()
     fig.add_trace(go.Pie(
         labels=total_labels, values=total_values, hole=.3, textinfo='label+percent',
+        insidetextfont=dict(size=14, color='black'),
         hovertemplate="<b>%{label}</b><br>帳面價值: $%{value:,.0f}<br>總資產佔比: %{percent}<extra></extra>",
         marker=dict(colors=pie_colors)
     ))
     if fig.data:
-        fig.update_layout(template="plotly_dark", height=400, margin=dict(t=20, b=20, l=20, r=20))
+        fig.update_layout(
+            template="plotly_dark", 
+            height=400, 
+            margin=dict(t=20, b=20, l=20, r=20),
+            legend=dict(
+                font=dict(size=18),      # 放大文字字體
+            )
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -217,7 +225,7 @@ def page_history(df_record, df_price):
     column_config_setting = {
         "代號": st.column_config.LinkColumn(
             "代號",
-            display_text=r"https://tw\.stock\.yahoo\.com/quote/(.*)"
+            display_text=r"quote/(\d+)" # 正規表達式：只顯示 quote/ 後面的數字
         )
     }
 
@@ -232,7 +240,6 @@ def page_history(df_record, df_price):
     if realized_data:
         df_re = pd.DataFrame(realized_data)
         st.dataframe(df_re, use_container_width=True, hide_index=True, column_config=column_config_setting)
-
 
 # ══════════════════════════════════════════
 # 頁面 5：月度績效結算

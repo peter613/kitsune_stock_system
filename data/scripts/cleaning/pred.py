@@ -4,6 +4,7 @@ import numpy as np
 from talib import *
 import gc
 import config
+from black_list import *
 
 # --- 設定區 ---
 def create_prediction(stock_filter=True):
@@ -47,61 +48,14 @@ def create_prediction(stock_filter=True):
 
     if stock_filter:
         print("正在過濾低成長股票...")
-        # 傳產: 11(水泥), 12(食品), 13(塑膠), 14(紡織), 19(造紙), 21(橡膠), 22(汽車)
-        # 營建航運觀光百貨: 25(營建), 26(航運), 27(觀光), 29(百貨), 55(營建), 59(百貨)
-        # 金融證券: 28(金融), 58(金融), 60(證券)
-        # 生技與其他傳統: 41(生技), 47(生技化工), 99(其他傳統產業)
-        # 其他冷門傳產與化工: 15, 16, 17, 20, 45, 84, 89
-        black_prefixes = (
-            # 1. 原物料與基礎工業
-            '11', # 水泥工業
-            '13', # 塑膠工業
-            '14', # 紡織纖維
-            '18', # 玻璃陶瓷
-            '19', # 造紙工業
-            '20', # 鋼鐵工業
-            '21', # 橡膠工業
-
-            # 2. 民生、消費與觀光
-            '12', # 食品工業
-            '22', # 汽車工業
-            '27', # 觀光事業 (上市/上櫃)
-            '29', # 貿易百貨 (上市)
-            '59', # 貿易百貨 (上櫃)
-
-            # 3. 化工、生技與醫療 (投信偶爾著墨，但估值邏輯與電子股完全不同)
-            '17', # 化學工業 / 傳統生技
-            '41', # 生技醫療業
-            '47', # 化學工業 (上櫃)
-            '65', # 燃氣油電 (如6505台塑化) / 新興生技醫療
-
-            # 4. 傳統機電與電纜
-            '15', # 電機機械 (上市)
-            '16', # 電器電纜
-            '45', # 電機機械 (上櫃，如4532瑞智)
-
-            # 5. 營建與航運
-            '25', # 建材營造 (上市)
-            '55', # 建材營造 (上櫃)
-            '26', # 航運業
-
-            # 6. 金融保險與證券 (股本極大、波動極低，會干擾機器學習的特徵權重)
-            '28', # 金融保險 (上市，如各大金控)
-            '58', # 金融保險 (上櫃/特定銀行)
-            '60', # 證券業
-
-            # 7. 其他綜合類股 (包含許多冷門股或控股公司)
-            '84', # 其他業 / 觀光生技 (如8454富邦媒)
-            '89', # 其他業 (上櫃冷門股)
-            '99'  # 其他業 (上市綜合類，如9904寶成)
-        )
-        black_ids = ('2412', '3045', '4904', '8454', '2353', '2357','6757')
+        get_black_prefixes = black_prefixes()
+        get_black_ids = black_ids()
         
         # 確保 id 是字串再過濾
         df['id'] = df['id'].astype(str)
         df_revenue['id'] = df_revenue['id'].astype(str)
-        df = df[~df['id'].str.startswith(black_prefixes) & ~df['id'].isin(black_ids)].copy().reset_index(drop=True)
-        df_revenue = df_revenue[~df_revenue['id'].str.startswith(black_prefixes) & ~df_revenue['id'].isin(black_ids)].copy().reset_index(drop=True)
+        df = df[~df['id'].str.startswith(get_black_prefixes) & ~df['id'].isin(get_black_ids)].copy().reset_index(drop=True)
+        df_revenue = df_revenue[~df_revenue['id'].str.startswith(get_black_prefixes) & ~df_revenue['id'].isin(get_black_ids)].copy().reset_index(drop=True)
 
     def clean_outliers(df, feature_cols):
         for col in feature_cols:
@@ -206,7 +160,8 @@ def create_prediction(stock_filter=True):
         print("錯誤：找不到完整的交易日資料。")
         return
     latest_date = valid_dates.max()
-    print(f"提取最新「完整」交易日: {latest_date.date()} (共 {date_counts[latest_date]} 檔)")
+    print(f"提取最新營收月份: {df_revenue['date'].dt.strftime('%Y-%m').max()}")
+    print(f"提取最新股票交易日: {latest_date.date()} (共 {date_counts[latest_date]} 檔)")
     
     final_predict_df = df[df["date"] == latest_date].copy()
     

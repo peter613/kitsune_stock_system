@@ -84,6 +84,10 @@ _CSS = """
 [data-testid="stSidebar"] .st-emotion-cache-6qob1r {
     font-size: 1.1rem !important;
 }
+
+[data-testid="stSidebarUserContent"] {
+    margin-top: -60px !important;
+}
 </style>
 """
 def alert(message):
@@ -136,8 +140,9 @@ def main():
     # 2. 全域警報（大盤波動率 → 再平衡 → 個股停損）
     unrealized_data, _, _, _ = calculate_settlement_data(df_record, df_price)
 
-    for msg in check_market_volatility_alerts(df_0050):
-        alert(msg)
+    #回測顯示砍半倉無益於報酬
+    # for msg in check_market_volatility_alerts(df_0050):
+    #     alert(msg)
     for msg in check_rebalance_alerts(df_record, df_price):
         alert(msg)
     for msg in check_stoploss_alerts(unrealized_data):
@@ -147,13 +152,16 @@ def main():
 
     # 3. Sidebar 導覽
     with st.sidebar:
-        st.title("KITSUNE KERNEL")
-        st.caption("")
+        st.markdown("# KITSUNE <br> KERNEL", unsafe_allow_html=True)
+        st.markdown(
+            f'<span style="font-weight: normal; font-size: 15px;">資料日期 : {df_history["date"].max().strftime("%Y/%m/%d")}</span>', 
+            unsafe_allow_html=True
+        )
+        st.divider()
         selection = st.radio("選單", list(_PAGES.keys()))
-
+        # st.markdown("<br>" * 5, unsafe_allow_html=True)
     # 4. 渲染對應頁面
     _PAGES[selection](df_history, df_record, df_price)
-
 
 if __name__ == "__main__":
     main()

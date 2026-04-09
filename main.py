@@ -92,10 +92,11 @@ def run_prediction(version: str, update_features: bool = False) -> str:
 def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
     """執行模型歷史回測。
     參數 benchmark 可選 '0050.TW' 或 '00631L.TW'。
+    參數 version 需請使用者輸入。
     """
     select_rank = [1, 2, 3, 4, 5]
     print(f"啟動 {version} 回測 (對照: {benchmark}, 範圍: Rank 1~5)...")
-    backtester(weight=None, version=version, benchmark=benchmark, select_rank=select_rank)
+    backtester(version=version, benchmark=benchmark, select_rank=select_rank)
     return f"版本 {version} 回測執行完畢，績效報告已產出。"
 
 def open_dashboard() -> str:

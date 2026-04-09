@@ -19,20 +19,22 @@ def create_cbm(version=None):
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values(['date', 'id']).reset_index(drop=True)
 
-    # feature_cols = ["sma240","sma60","sma10", 
-    #                 "adx", "kama",
-    #                 "breakout_20", "breakout_240",
-    #                 "trust_in_5",
-    #                 "r2_60","r2_20",
-    #                 "mom", "yoy", "yoy_ma3_bias",
-    #                 'amount20',"amount60",
-    #                 ]
-
-    feature_cols =  ["sma60", "sma240",  "adx", "kama","breakout_20", "breakout_240", 
-                    "trust_in_5","r2_60", "yoy", "yoy_ma3_bias",
-					"amount60",
-                    'amount20',"sma20","r2_20","t_f_sync",#'atr',#"mom",
-					]
+    feature_cols = [
+        # 趨勢與均線
+        "sma20", "sma60", "sma240", "kama", "adx", 
+        
+        # 趨勢強度與突破
+        "r2_20", "r2_60", "breakout_20", "breakout_240",
+        
+        # 流動性 (Log化)
+        "amount20", "amount60",
+        
+        # 籌碼與法人動能
+        "trust_in_5", "t_f_sync",
+        
+        # 基本面
+        "yoy", "yoy_ma3_bias"
+    ]
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
 
     # 4. 切分訓練集 (前 80%) 與 驗證集 (後 20%)

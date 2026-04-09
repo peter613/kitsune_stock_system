@@ -253,7 +253,7 @@ def calculate_settlement_data(df_record, df_price):
         curr_shares  = cum_shares - shares_sold
         avg_cost     = total_cost / cum_shares if cum_shares > 0 else 0
         avg_buy_fee  = cum_buy_fee / cum_shares if cum_shares > 0 else 0
-        yahoo_url    = f"https://tw.stock.yahoo.com/quote/{aid}"
+        yahoo_url    = f"https://tw.stock.yahoo.com/quote/{aid}/institutional-trading"
 
         # ── 已實現部分 ──────────────────────
         if shares_sold > 0:
