@@ -4,7 +4,7 @@ import numpy as np
 from talib import *
 import gc
 import config
-from black_list import *
+from data.scripts.cleaning.black_list import *
 
 # --- 設定區 ---
 def create_prediction(stock_filter=True):

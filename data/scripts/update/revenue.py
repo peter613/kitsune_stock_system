@@ -155,7 +155,11 @@ def update_revenue():
     all_revenue.sort_values(by=['date', 'id'], ascending=[True, True], inplace=True)
 
     # 4. 交互確認與存檔
-    print(f"\n預計更新後營收總筆數: {len(all_revenue)} (本次新增 {len(new_revenue)} 筆)")
+
+    last_date = old_revenue['date'].max()
+    last_month_count = len(old_revenue[old_revenue['date'] == last_date])
+    print(f"本次新增 {len(new_revenue)} 筆 (上個月筆數: {last_month_count})")
+    print(f"\n預計更新後營收總筆數: {len(all_revenue)}")
     print(f"預計更新後股票總檔數: {len(all_lookup)}")
     user_input = input('確認資料無誤？ [按 Y 存檔 / 其他鍵取消]: ').strip().lower()
     

@@ -5,7 +5,7 @@ from talib import *
 from datetime import datetime
 import gc
 import config
-from black_list import *
+from data.scripts.cleaning.black_list import *
 
 def create_training(version='v14', years_10=True, stock_filter=True):
     file_save_name = config.FEATURES_DIR / f'train_{version}.csv'
