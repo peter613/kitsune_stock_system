@@ -5,6 +5,10 @@ import subprocess
 import os
 import config
 
+#===note===
+#未來投組比例，etf投組 : 量化投組 : 現金 = 60% : 30% : 10%
+#etf投組， 00731(高息低波) : 00919 : 0056 = 3 : 1 : 1
+
 # === 導入新版 Google GenAI SDK ===
 from google import genai
 from google.genai import types

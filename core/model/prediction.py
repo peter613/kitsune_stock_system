@@ -99,4 +99,4 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     return f"以下是選股結果與其在全市場的特徵百分位(PR)排名：{ai_analysis_data}"
 
 if __name__ == "__main__":
-    prediction(version='v16', select_ranks=[c for c in range(1,6)])
+    prediction(version='v17', select_ranks=[c for c in range(1,7)])

@@ -100,7 +100,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
                 '選股主因 (Feature:Contribution)': reason_str,
                 '該股當月報酬%': round(row[ret_col] * 100, 2),
                 '成交量/值(Log)': round(row['amount60'], 2) if 'amount60' in row else 'N/A',
-                'MOM': round(row['mom'], 2) if 'mom' in row else 'N/A',
+                # 'MOM': round(row['mom'], 2) if 'mom' in row else 'N/A',
             })
 
     full_log_df = pd.DataFrame(all_trade_records)
@@ -419,9 +419,9 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
         .reset_index()
     )
 
-    # 三個子圖合成一張 figure（高度比 3:1:3）
-    fig = plt.figure(figsize=(14, 14))
-    gs  = fig.add_gridspec(3, 1, height_ratios=[3, 1, 3], hspace=0.4)
+    # 兩個子圖合成一張 figure
+    fig = plt.figure(figsize=(14, 10)) # 高度從 14 縮減為 10 比較精緻
+    gs  = fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.3)
 
     # 子圖 1：NAV 走勢
     ax1 = fig.add_subplot(gs[0])
@@ -442,34 +442,34 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     ax1.legend(loc='upper left')
     ax1.grid(True, alpha=0.3)
 
-    # 子圖 2：回撤
+    # 子圖 2：Rank 期望值長條圖
     ax2 = fig.add_subplot(gs[1])
-    ax2.fill_between(results_df['date'], drawdown[1:], 0,
-                     color='tomato', alpha=0.35, label='Drawdown')
-    ax2.set_title('Drawdown from Peak NAV')
-    ax2.set_ylabel('Drawdown')
-    ax2.legend(loc='lower left')
-    ax2.grid(True, alpha=0.3)
-
-    # 子圖 3：Rank 期望值長條圖
-    ax3 = fig.add_subplot(gs[2])
     colors = ['crimson' if r in select_rank else 'steelblue'
               for r in rank_stats['rank']]
-    bars = ax3.bar(rank_stats['rank'], rank_stats['avg_return'],
+    bars = ax2.bar(rank_stats['rank'], rank_stats['avg_return'],
                    color=colors, alpha=0.8)
 
-    ax3.set_title(f'Avg Return & Win Rate by Rank  (red = selected ranks: {rank_str})')
-    ax3.set_xlabel('Rank')
-    ax3.set_ylabel('Avg Return (%)')
-    ax3.set_xticks(rank_stats['rank'])
-    ax3.axhline(0, color='gray', linewidth=0.8)
-    ax3.grid(axis='y', alpha=0.3)
+    ax2.set_title(f'Avg Return & Win Rate by Rank  (red = selected ranks: {rank_str})')
+    ax2.set_xlabel('Rank')
+    ax2.set_ylabel('Avg Return (%)')
+    ax2.set_xticks(rank_stats['rank'])
+    ax2.axhline(0, color='gray', linewidth=0.8)
+    ax2.grid(axis='y', alpha=0.3)
+
+    # 子圖 3：回撤
+    # ax3 = fig.add_subplot(gs[2])
+    # ax3.fill_between(results_df['date'], drawdown[1:], 0,
+    #                  color='tomato', alpha=0.35, label='Drawdown')
+    # ax3.set_title('Drawdown from Peak NAV')
+    # ax3.set_ylabel('Drawdown')
+    # ax3.legend(loc='lower left')
+    # ax3.grid(True, alpha=0.3)
 
     for bar, row in zip(bars, rank_stats.itertuples()):
         yval   = bar.get_height()
         va     = 'bottom' if yval >= 0 else 'top'
         offset = 0.08 if yval >= 0 else -0.08
-        ax3.text(
+        ax2.text(
             bar.get_x() + bar.get_width() / 2,
             yval + offset,
             f'{row.avg_return:.2f}%\n(W:{row.winrate:.1f}%)\n'
@@ -496,4 +496,4 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
 
 
 if __name__ == "__main__":
-    backtester(version='v16', select_rank=list(range(1, 6)), benchmark='00631L.TW')
+    backtester(version='v17', select_rank=list(range(1, 6)), benchmark='00631L.TW')

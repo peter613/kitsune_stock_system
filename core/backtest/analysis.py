@@ -3,7 +3,7 @@ import os
 import config
 
 # 讀取 CSV 交易日誌 (加入防呆編碼)
-file_path = config.BACKTEST_TRADELOG_DIR / "trade_log_v16_rank_1_2_3_4_5.csv"
+file_path = config.BACKTEST_TRADELOG_DIR / "trade_log_v17_rank_1_2_3_4_5.csv"
 test_df = pd.read_csv(file_path, encoding='utf-8-sig')
 
 def rank_skewness(test_df):

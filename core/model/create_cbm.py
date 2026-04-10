@@ -60,14 +60,15 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=3000,
+        iterations=10000,
         learning_rate=0.005,
         depth=6,
         loss_function='YetiRank',
         eval_metric='NDCG:top=5',
-        early_stopping_rounds=600,
+        early_stopping_rounds=1500,
         verbose=100,
         random_seed=42,
+        custom_metric=['PrecisionAt:top=5'],
     )
 
     print("開始訓練模型...")
@@ -85,4 +86,4 @@ def create_cbm(version=None):
     print(f"特徵列表已備份至: {feature_save_path_json}")
 
 if __name__ == "__main__":
-    create_cbm(version='v16')
+    create_cbm(version='v17')

@@ -167,7 +167,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print("進行特徵淨化 (Clipping) 與標籤生成...")
     growth_cols = ['mom', 'yoy', 'yoy_ma3', 'yoy_ma3_bias']
     for col in growth_cols:
-        final_df[col] = final_df[col].clip(lower=-200.0, upper=200.0)
+        final_df[col] = final_df[col].clip(lower=-100.0, upper=100.0)
 
     other_features = [ 'trust_in_5', 'amount60', 'breakout_20', 'breakout_60']
     for col in other_features:
@@ -187,4 +187,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"樣本總數: {len(final_df)} | 最新日期: {final_df['date'].max().date()}")
 
 if __name__ == "__main__":
-    create_training(version='v16', years_10=True, stock_filter=True)
+    create_training(version='v17', years_10=True, stock_filter=True)
