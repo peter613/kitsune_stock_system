@@ -107,6 +107,10 @@ def create_training(version='v14', years_10=True, stock_filter=True):
 
         # Label: 20日後報酬率 (Ranker 訓練目標)
         group['return_20d'] = (group['close'].shift(-20) / (group['close'] + 1e-9)) - 1
+
+        #連續漲停次數
+        # group['is_limit_up'] = np.where(group['close'] >= group['close'].shift(1) * 1.095, 1, 0)
+        # group['limit_up_count_5d'] = group['is_limit_up'].rolling(window=5, min_periods=1).sum()
         
         return group
 
@@ -187,4 +191,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"樣本總數: {len(final_df)} | 最新日期: {final_df['date'].max().date()}")
 
 if __name__ == "__main__":
-    create_training(version='v17', years_10=True, stock_filter=True)
+    create_training(version='v18', years_10=True, stock_filter=True)

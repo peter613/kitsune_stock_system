@@ -33,68 +33,70 @@ else:
     month = now.month - 1
 
 # ==========================================
-# 爬蟲核心函式
+# 爬蟲核心函式 (含重試機制)
 # ==========================================
-def revenue_crawer(name,is_foreign):
+def revenue_crawer(name, is_foreign):
     """
     抓取公開資訊觀測站營收資料
     name: 'sii' (上市) 或 'otc' (上櫃)
     is_foreign: '0' (本國) 或 '1' (外國/KY)
     """
     url_twse = f'https://mopsov.twse.com.tw/nas/t21/{name}/t21sc03_{year}_{month}_{is_foreign}.html'
-    try:
-        r = requests.get(url_twse, headers=headers, verify=False)
-        r.encoding = 'cp950' 
-        
-        if r.status_code != 200:
-            print(f"[{name}] 下載失敗，網站可能維護中或路徑錯誤")
-            return None
+    
+    for attempt in range(2): # 嘗試 2 次 (1次原始 + 1次重試)
+        try:
+            r = requests.get(url_twse, headers=headers, verify=False, timeout=15)
+            r.encoding = 'cp950' 
+            
+            if r.status_code != 200:
+                raise Exception(f"HTTP {r.status_code}")
 
-        dfs = pd.read_html(StringIO(r.text))
-        target_df = pd.DataFrame()
-        
-        for df in dfs:
-            df_str = str(df.columns) + str(df.iloc[0:1]) # 同時檢查標題與第一列
-            if df.shape[1] > 5 and ('當月營收' in df_str or '公司代號' in df_str or '公司 代號' in df_str):
-                target_df = pd.concat([target_df, df], axis=0, ignore_index=True)
+            dfs = pd.read_html(StringIO(r.text))
+            target_df = pd.DataFrame()
+            
+            for df in dfs:
+                df_str = str(df.columns) + str(df.iloc[0:1])
+                if df.shape[1] > 5 and ('當月營收' in df_str or '公司代號' in df_str or '公司 代號' in df_str):
+                    target_df = pd.concat([target_df, df], axis=0, ignore_index=True)
 
-        if target_df.empty:
-            print(f"[{name}] 找不到表格資料")
-            return None
+            if target_df.empty:
+                raise Exception("Empty Table")
 
-        # 清洗 MultiIndex 並過濾雜質
-        target_df.columns = target_df.columns.get_level_values(-1)
-        target_df = target_df[~target_df['公司 代號'].astype(str).str.contains('合計')]
-        target_df = target_df[target_df['公司 代號'] != '公司 代號']
-        
-        rename_map = {
-            '公司 代號': 'id',
-            '公司名稱': 'name',
-            '當月營收': 'month_revenue',
-            '上月比較 增減(%)': 'mom',
-            '去年同月 增減(%)': 'yoy'
-        }
-        
-        cols_to_keep = [c for c in rename_map.keys() if c in target_df.columns]
-        final_df = target_df[cols_to_keep].rename(columns=rename_map)
-        
-        # 轉為數值格式
-        numeric_cols = ['month_revenue', 'mom', 'yoy']
-        for col in numeric_cols:
-            if col in final_df.columns:
-                final_df[col] = pd.to_numeric(final_df[col], errors='coerce')
-        
-        final_df['date'] = datetime(year + 1911, month, 1)
+            # 清洗資料邏輯
+            target_df.columns = target_df.columns.get_level_values(-1)
+            target_df = target_df[~target_df['公司 代號'].astype(str).str.contains('合計')]
+            target_df = target_df[target_df['公司 代號'] != '公司 代號']
+            
+            rename_map = {
+                '公司 代號': 'id',
+                '公司名稱': 'name',
+                '當月營收': 'month_revenue',
+                '上月比較 增減(%)': 'mom',
+                '去年同月 增減(%)': 'yoy'
+            }
+            
+            cols_to_keep = [c for c in rename_map.keys() if c in target_df.columns]
+            final_df = target_df[cols_to_keep].rename(columns=rename_map)
+            
+            numeric_cols = ['month_revenue', 'mom', 'yoy']
+            for col in numeric_cols:
+                if col in final_df.columns:
+                    final_df[col] = pd.to_numeric(final_df[col], errors='coerce')
+            
+            final_df['date'] = datetime(year + 1911, month, 1)
+            final_df['market_type'] = 'twse' if name == 'sii' else 'tpex'
 
-        # 新增市場類型標籤：上市(sii)=twse, 上櫃(otc)=tpex
-        final_df['market_type'] = 'twse' if name == 'sii' else 'tpex'
+            print(f"[{name}{'-ky' if is_foreign == '1' else ''}] 成功抓取 {len(final_df)} 筆資料")
+            return final_df
 
-        print(f"[{name}{'-ky' if is_foreign == 1 else ''}] 成功抓取 {len(final_df)} 筆資料")
-        return final_df
-
-    except Exception as e:
-        print(f"⚠️ [{name}{'-ky' if is_foreign == 1 else ''}] 發生錯誤: {e}")
-        return None
+        except Exception as e:
+            if attempt < 2:
+                print(f"[{name}] 第 {attempt+1} 次重試... 原因: {e}")
+                time.sleep(5) # 避免過快請求被封鎖
+                continue
+            else:
+                print(f"[{name}] 最終錯誤: {e}")
+                return None
 
 # ==========================================
 # 主要執行邏輯

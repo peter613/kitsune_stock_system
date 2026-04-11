@@ -78,7 +78,7 @@ def train_model(version: str) -> str:
     return f"版本 {version} 特徵與模型訓練完成。"
 
 def run_prediction(version: str, update_features: bool = False) -> str:
-    """執行特定版本模型的明日預測。若 update_features 為 True 則先更新特徵。"""
+    """執行特定版本模型的明日預測。預設update_features為True"""
     if update_features:
         print("更新預測特徵...")
         create_prediction() 

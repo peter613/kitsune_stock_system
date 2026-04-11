@@ -33,7 +33,10 @@ def create_cbm(version=None):
         "trust_in_5", "t_f_sync",
         
         # 基本面
-        "yoy", "yoy_ma3_bias"
+        "yoy", "yoy_ma3_bias",
+
+        # #漲停煞車
+        # "limit_up_count_5d",
     ]
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
 
@@ -86,4 +89,4 @@ def create_cbm(version=None):
     print(f"特徵列表已備份至: {feature_save_path_json}")
 
 if __name__ == "__main__":
-    create_cbm(version='v17')
+    create_cbm(version='v18')
