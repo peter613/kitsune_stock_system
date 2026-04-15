@@ -85,8 +85,24 @@ def create_prediction(stock_filter=True):
         group['foreign_in_5'] = f_net_5 / vol_5
         group['t_f_sync'] = group['trust_in_5'] * group['foreign_in_5']
 
-        # [優化 3] 將流動性移到這裡算，保證排序正確且效能最高
-        group["amount_ma60"] = SMA(amount_ln, timeperiod=60)
+        group["amount20"] = SMA(amount_ln, 20)
+        group["amount60"] = SMA(amount_ln, 60)  # 同時用於流動性篩選與特徵
+
+        time_idx = np.arange(len(close), dtype=float)
+        r_60 = CORREL(close, time_idx, timeperiod=60)
+        r_20 = CORREL(close, time_idx, timeperiod=20)
+        group['r2_60'] = np.sign(r_60)* (r_60** 2)
+        group['r2_20'] = np.sign(r_20)* (r_20** 2)
+
+        #突破
+        group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)
+        group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
+        group['breakout_240'] = close / (MAX(high, timeperiod=240) + 1e-9)
+
+        #築底
+        group['support_20'] = MAX(low, timeperiod=20) / (close + 1e-9)
+        group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
+        group['support_240'] = MAX(low, timeperiod=240) / (close + 1e-9)
 
         group["sma240"] = close / (SMA(close, timeperiod=240) + 1e-9)
         group["sma60"] = close / (SMA(close, timeperiod=60) + 1e-9)
@@ -100,23 +116,7 @@ def create_prediction(stock_filter=True):
         except:
             group["kama"] = np.nan
 
-        # _, _, macd_hist = MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-        # group["macd_hist"] = macd_hist / (close + 1e-9)
-
-        # upper, middle, lower = BBANDS(close, timeperiod=20)
-        # group["bb_width"] = (upper - lower) / (middle + 1e-9)
-
         group["atr"] = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
-
-        group["amount20"] =SMA(amount_ln, 20)
-        group["amount60"] =SMA(amount_ln, 60)
-
-        time_idx = np.arange(len(close), dtype=float)
-        group["r2_60"] = CORREL(close, time_idx, timeperiod=60) ** 2
-        group["r2_20"] = CORREL(close, time_idx, timeperiod=20) ** 2
-
-        group["breakout_20"] = close / (MAX(high, timeperiod=20) + 1e-9)
-        group["breakout_240"] = close / (MAX(high, timeperiod=240) + 1e-9)
 
         return group
 
@@ -169,19 +169,19 @@ def create_prediction(stock_filter=True):
     gc.collect()
 
     final_predict_df["day_count"] = len(final_predict_df)
-    final_predict_df["liq_rank"] = final_predict_df["amount_ma60"].rank(ascending=False)
+    final_predict_df["liq_rank"] = final_predict_df["amount60"].rank(ascending=False)
     
     # [流動性]
     final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)]
 
     features = ["sma240","sma60","sma20","sma10",
                     "adx", "kama",
-                    "breakout_20", "breakout_240",
+                    "breakout_20", "breakout_60", "breakout_240",
                     "trust_in_5",
                     "r2_60","r2_20",
                     "mom", "yoy", "yoy_ma3_bias",
                     'amount20',"amount60","t_f_sync",
-                    'atr'#v12要
+                    'atr'
                     ]
 
     print("正在執行特徵去極值處理...")

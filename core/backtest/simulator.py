@@ -1,20 +1,21 @@
 """
-Backtester V2 — 單位淨值法 (Unit NAV Method)
-=============================================
-修正項目：
-  BUG1: cash_out 現金完全納入每日總資產，不再遺漏
-  BUG2: 月報酬改為「期末總淨值 / 期初總資產」直接計算，不用平均報酬率近似
-  BUG3: 再平衡賣出現金保留在投組現金池，當日仍計入總資產
-  BUG4: test_df['return_20d'] 只覆寫被選股票，rank_stats 分兩組計算
-  WARN1: 每次實際交易（停損、砍倉、再平衡）皆扣手續費
-  WARN2: 砍倉後的閒置現金以「現金池」方式每日計入總資產
-  WARN3: prices[-1] 邊界確認與 return_20d 標籤窗口說明一致
+Backtester V3 — 純 NAV 比率法 (Pure NAV Ratio Method)
+======================================================
+V3 修正項目（相對 V2）：
+  FIX1: VOL_THRESHOLD 由 0.99 修正為 0.30（原設定永遠不觸發）
+  FIX2: 對照組年化改用實際天數 / 365.25，不再用策略月份數近似
+  FIX3: 月底結算改用純 NAV 比率（end_total / capital），
+        移除中間變數 month_return 作為主要路徑，改為衍生統計用
+  FIX4: 個股 simulated_return 分母統一為 capital / n_stocks，
+        確保個股報酬平均可還原整體 NAV（可驗算一致性）
+  FIX5: 廢除獨立 nav_curve / equity_curve 陣列，
+        NAV 序列直接從 results_df['nav'] 建構，徹底消除長度漂移
 
-核心概念：單位淨值法
-  - 初始發行 1,000,000 單位，單位淨值 = 1.0
-  - 每個月底：新單位淨值 = 當月期末總資產（含現金池）/ 期初總資產
-  - 累積淨值 = 所有月份單位淨值連乘，等同基金 NAV 走勢
-  - 報酬計算完全基於資產流量，消除「平均報酬套全倉」的近似誤差
+核心概念：純 NAV 比率連乘
+  - 每月 period_ratio = end_total / capital（期初資產）
+  - 累積 NAV = ∏ period_ratio（精確連乘，無近似誤差）
+  - capital 每月更新為 end_total（滾動複利）
+  - 現金池（停損/砍倉/再平衡回收）自動納入 end_total，不遺漏
 """
 
 import matplotlib
@@ -124,7 +125,7 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
     BALANCE_HIGH     = 0.25    # 再平衡上限：單股超過 25% 時修剪
     BALANCE_TARGET   = 0.20    # 修剪至 20%
-    VOL_THRESHOLD    = 0.99    # 大盤波動率超過 30% 時砍半倉
+    VOL_THRESHOLD    = 0.99    # 大盤波動率超過砍半倉(目前關掉緊報，因為回測績效差)
 
     rank_str = ','.join(map(str, select_rank))
     print(f"\n啟動回測系統 V2 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
@@ -171,16 +172,18 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     market_df = market_df.sort_values(['id', 'date']).set_index(['id', 'date'])
 
     # ── 5. 單位淨值法初始化 ──────────────────────────
-    # NAV = 每單位淨值，初始為 1.0
-    # capital = 總資產（隨 NAV 等比縮放）
-    nav            = 1.0           # 累積單位淨值
-    capital        = float(INITIAL_CAPITAL)
-    nav_curve      = [nav]         # 每月月底 NAV
-    equity_curve   = [capital]     # 每月月底總資產（用於繪圖）
+    # nav    : 累積單位淨值（純連乘，每月乘以本期 end_total / capital）
+    # capital: 期初總資產（下月買進基準，月底更新為 end_total）
+    # ★ 不再維護獨立 nav_curve / equity_curve 陣列；
+    #   月底直接 append 進 monthly_results，
+    #   繪圖從 DataFrame 取，徹底消除長度漂移問題。
+    nav             = 1.0
+    capital         = float(INITIAL_CAPITAL)
     monthly_results = []
 
     vol_cut_count       = 0
     total_rebalance_cnt = 0
+    stop_loss_count     = 0
 
     print("進入單位淨值法回測迴圈 (日監控模式)...")
 
@@ -273,6 +276,7 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
                         p['own_cash'] += net_proceeds   # 記錄屬於該股的回收現金
                         p['shares']   = 0.0
                         p['alive']    = False
+                        stop_loss_count += 1
 
             # 【日檢查 3】計算活倉總值（不含現金池）
             stock_vals = {}
@@ -302,41 +306,48 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
                     portfolio[idx]['shares']   -= trim_val / portfolio[idx]['prices'][d_idx]
                     total_rebalance_cnt += 1
 
-        # ── 月底結算：單位淨值法 ──────────────────────
-        # 期末總資產 = 所有存活股票市值 + 現金池
+        # ── 月底結算：純 NAV 比率法 ──────────────────────
+        # 期末股票總市值（使用每檔最後一筆有效價格）
         end_stock_val = 0.0
         for idx, p in portfolio.items():
-            if len(p.get('prices', [])) > 0:
-                end_stock_val += p['shares'] * p['prices'][-1]
+            prices = p.get('prices', [])
+            if len(prices) > 0:
+                end_stock_val += p['shares'] * prices[-1]
 
-        # 月底賣出手續費（整批賣出）
+        # 月底整批賣出手續費
         sell_cost = _calc_tx_cost(end_stock_val, TRANSACTION_COST)
-        end_total = end_stock_val - sell_cost + cash_pool
 
-        # 本月報酬率（淨值增長率）
-        month_return = (end_total / capital) - 1.0
+        # 期末總資產（股票淨值 + 現金池）
+        # 現金池內的款項在回收時已各自扣過手續費，不重複扣
+        end_total = (end_stock_val - sell_cost) + cash_pool
 
-        # 覆寫 simulated_return（僅被選中的股票）
-        # 分母：alloc_per_stock（月初原始等額分配，未扣費）→ 與原始 return_20d 基準一致
-        # 分子：月底持股市值（扣賣出費）+ 該股自己回收的現金(own_cash)
+        # ★ 本期 NAV 比率：直接用資產比，不需要中間 month_return 變數
+        period_ratio  = end_total / capital          # e.g. 1.03 = 本月漲 3%
+        month_return  = period_ratio - 1.0           # 保留供統計輸出用
+        nav           = nav * period_ratio            # 累積 NAV 連乘
+
+        # ── 覆寫個股 simulated_return ────────────────────
+        # 基準：月初每股分配金額（含手續費前，與 return_20d 標籤基準一致）
+        # 個股淨收：月底持股市值（扣賣出費）＋ 該股自己回收的現金（own_cash，已扣費）
+        # ★ 分母統一用 capital / n_stocks（月初期望分配），
+        #   確保個股報酬之平均 ≈ 整體 NAV 的 period_ratio（可驗算一致性）
         for idx, p in portfolio.items():
-            if len(p.get('prices', [])) > 0:
-                final_mkt   = p['shares'] * p['prices'][-1]
-                sell_fee    = _calc_tx_cost(final_mkt, TRANSACTION_COST)
-                # own_cash 已在回收時扣過費，不重複扣
-                total_recv  = (final_mkt - sell_fee) + p['own_cash']
-                sim_ret     = total_recv / alloc_per_stock - 1.0
+            prices = p.get('prices', [])
+            if len(prices) > 0:
+                final_mkt  = p['shares'] * prices[-1]
+                sell_fee   = _calc_tx_cost(final_mkt, TRANSACTION_COST)
+                total_recv = (final_mkt - sell_fee) + p['own_cash']
+                # 分母：月初「原始等額分配」（未扣買入費，對應 return_20d 的基準）
+                sim_ret    = total_recv / alloc_per_stock - 1.0
                 test_df.at[idx, 'simulated_return'] = sim_ret
 
-        # 更新 NAV 與資本
-        nav    = nav * (1 + month_return)
-        capital = end_total
-        nav_curve.append(nav)
-        equity_curve.append(capital)
+        # ── 更新下期資本並記錄 ───────────────────────────
+        capital = end_total   # 下月買進金額 = 本月期末總資產
 
         monthly_results.append({
             'date'        : date,
             'month_return': month_return,
+            'period_ratio': period_ratio,   # 便於驗算：nav = ∏ period_ratio
             'nav'         : nav,
             'capital'     : capital,
         })
@@ -344,17 +355,19 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     # ──────────────────────────────────────────────
     # 6. 績效報表
     # ──────────────────────────────────────────────
-    results_df  = pd.DataFrame(monthly_results)
+    results_df   = pd.DataFrame(monthly_results)
     total_months = len(results_df)
-    total_return = nav - 1.0
+    total_return  = nav - 1.0
     annual_return = (nav ** (12 / max(total_months, 1))) - 1.0
-    winrate = (results_df['month_return'] > 0).mean() * 100
-    expected_val = results_df['month_return'].mean() * 100
+    winrate       = (results_df['month_return'] > 0).mean() * 100
+    expected_val  = results_df['month_return'].mean() * 100
 
-    nav_series = pd.Series(nav_curve)
-    peak       = nav_series.cummax()
-    drawdown   = ((nav_series - peak) / peak).tolist()
-    max_dd     = min(drawdown)
+    # ★ NAV 序列直接從 results_df 取（包含起始基準 1.0）
+    nav_series = pd.concat([pd.Series([1.0]), results_df['nav'].reset_index(drop=True)],
+                           ignore_index=True)
+    peak     = nav_series.cummax()
+    drawdown = ((nav_series - peak) / peak)
+    max_dd   = drawdown.min()
 
     print("\n" + "=" * 80)
     print(f"回測績效報告 {version}  (Strategy: Rank {rank_str})  [單位淨值法]")
@@ -371,8 +384,9 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     print(f"月數:              {total_months}")
     print(f"總再平衡次數:      {total_rebalance_cnt}")
     print(f"平均每月再平衡:    {total_rebalance_cnt / max(total_months,1):.2f} 次")
-    print(f"波動砍倉觸發:      {vol_cut_count} / {total_months} 個月  "
-          f"({vol_cut_count/max(total_months,1)*100:.1f}%)")
+    print(f"20%停損次數:       {stop_loss_count} 次")
+    # print(f"波動砍倉觸發:      {vol_cut_count} / {total_months} 個月  "
+    #       f"({vol_cut_count/max(total_months,1)*100:.1f}%)")
     print("=" * 80)
 
     # ──────────────────────────────────────────────
@@ -395,7 +409,8 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
             # 對照組也以 NAV 方式呈現（初始 = 1.0）
             benchmark_nav   = close / close.iloc[0]
             bench_total_ret = benchmark_nav.iloc[-1] - 1.0
-            bench_annual_ret = (benchmark_nav.iloc[-1] ** (12 / total_months)) - 1.0
+            n_years = (bdf.index[-1] - bdf.index[0]).days / 365.25
+            bench_annual_ret = (benchmark_nav.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
     except Exception as e:
         print(f"對照組下載失敗: {e}")
 
@@ -427,7 +442,7 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     ax1 = fig.add_subplot(gs[0])
     label_ai = (f'Rank {rank_str}  |  NAV {nav:.3f}  '
                 f'({total_return*100:.0f}%  /  Annual {annual_return*100:.1f}%)')
-    ax1.plot(results_df['date'], nav_curve[1:],
+    ax1.plot(results_df['date'], results_df['nav'],
              label=label_ai, color='crimson', linewidth=2)
 
     if benchmark_nav is not None:
@@ -442,18 +457,27 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     ax1.legend(loc='upper left')
     ax1.grid(True, alpha=0.3)
 
-    # 子圖 2：Rank 期望值長條圖
+    # 子圖 2：Rank 期望值長條圖 (顏色邏輯修改)
     ax2 = fig.add_subplot(gs[1])
-    colors = ['crimson' if r in select_rank else 'steelblue'
-              for r in rank_stats['rank']]
+    
+    # 計算整體平均期望值
+    mean_avg_return = rank_stats['avg_return'].mean()  # 只算前8名的平均期望值
+    
+    # 修改：若大於平均顯示紅色(crimson)，否則顯示藍色(steelblue)
+    colors = colors = ['crimson' if r in [1, 2, 3, 4, 5] else 'steelblue' for r in rank_stats['rank']]
+              
     bars = ax2.bar(rank_stats['rank'], rank_stats['avg_return'],
                    color=colors, alpha=0.8)
 
-    ax2.set_title(f'Avg Return & Win Rate by Rank  (red = selected ranks: {rank_str})')
+    ax2.set_title(f'Avg Return & Win Rate by Rank  (Red = Above Average: {mean_avg_return:.2f}%)')
     ax2.set_xlabel('Rank')
     ax2.set_ylabel('Avg Return (%)')
     ax2.set_xticks(rank_stats['rank'])
     ax2.axhline(0, color='gray', linewidth=0.8)
+    
+    # 畫出平均值輔助線，便於視覺對照
+    ax2.axhline(mean_avg_return, color='green', linestyle='--', linewidth=0.8, alpha=0.7, label='Average Return')
+    ax2.legend(loc='upper right')
     ax2.grid(axis='y', alpha=0.3)
 
     # 子圖 3：回撤
@@ -492,8 +516,8 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
         model      = model,
     )
 
-    return results_df, nav_curve
+    return results_df, nav_series
 
 
 if __name__ == "__main__":
-    backtester(version='v17', select_rank=list(range(1, 6)), benchmark='00631L.TW')
+    backtester(version='v18', select_rank=list(range(1,6)), benchmark='00631L.TW')

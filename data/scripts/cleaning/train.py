@@ -1,4 +1,5 @@
 import os
+from click import group
 import pandas as pd
 import numpy as np
 from talib import *
@@ -86,9 +87,15 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         group['amount20'] =  SMA(amount_ln, 20)
         group['amount60'] =  SMA(amount_ln, 60)
 
+        #突破
         group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)
         group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
         group['breakout_240'] = close / (MAX(high, timeperiod=240) + 1e-9)
+
+        #築底
+        group['support_20'] = MAX(low, timeperiod=20) / (close + 1e-9)
+        group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
+        group['support_240'] = MAX(low, timeperiod=240) / (close + 1e-9)
 
         vol_5 = SMA(volume, 5) * 5 + 1  # 加 1 避免分母為零
         t_net_5 = SMA(group['Trust_Net'].values.astype(float), 5) * 5
@@ -99,18 +106,16 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         group['t_f_sync'] = group['trust_in_5'] * group['foreign_in_5']
         
         time_idx = np.arange(len(close), dtype=float)
-        group['r2_60'] = CORREL(close, time_idx, timeperiod=60) ** 2
-        group['r2_20'] = CORREL(close, time_idx, timeperiod=20) ** 2
+        r_60 = CORREL(close, time_idx, timeperiod=60)
+        r_20 = CORREL(close, time_idx, timeperiod=20)
+        group['r2_60'] = np.sign(r_60)* (r_60** 2)
+        group['r2_20'] = np.sign(r_20)* (r_20** 2)
 
         # upper, middle, lower = BBANDS(close, timeperiod=20)
         # group['bb_width'] = (upper - lower) / (middle + 1e-9)
 
         # Label: 20日後報酬率 (Ranker 訓練目標)
         group['return_20d'] = (group['close'].shift(-20) / (group['close'] + 1e-9)) - 1
-
-        #連續漲停次數
-        # group['is_limit_up'] = np.where(group['close'] >= group['close'].shift(1) * 1.095, 1, 0)
-        # group['limit_up_count_5d'] = group['is_limit_up'].rolling(window=5, min_periods=1).sum()
         
         return group
 
@@ -191,4 +196,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"樣本總數: {len(final_df)} | 最新日期: {final_df['date'].max().date()}")
 
 if __name__ == "__main__":
-    create_training(version='v18', years_10=True, stock_filter=True)
+    create_training(version='v19', years_10=True, stock_filter=True)

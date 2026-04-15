@@ -13,9 +13,10 @@ from engine import (
     calculate_daily_history,
     calculate_settlement_data,
     check_rebalance_alerts,
-    check_market_volatility_alerts,
+    #check_market_volatility_alerts,
     check_stoploss_alerts,
-    check_bear_market_alerts
+    check_bear_market_alerts,
+    check_etf_balance_day,
 )
 from pages import (
     page_performance_pct,
@@ -117,7 +118,7 @@ def alert(message):
 _PAGES = {
     "累積報酬率":   lambda h, r, p: page_performance_pct(h),
     "累積權益":     lambda h, r, p: page_performance_nav(h, r, p),
-    "目前配置":     lambda h, r, p: page_allocation(r, p),
+    "目前配置":     lambda h, r, p: page_allocation(h,r, p),
     "損益結算中心": lambda h, r, p: page_history(r, p),
     "單月績效報告": lambda h, r, p: page_monthly_performance(h),
 }
@@ -138,7 +139,7 @@ def main():
     loading.empty()
 
     # 2. 全域警報（大盤波動率 → 再平衡 → 個股停損）
-    unrealized_data, _, _, _ = calculate_settlement_data(df_record, df_price)
+    unrealized_data, _, _, _,_ = calculate_settlement_data(df_record, df_price)
 
     #回測顯示砍半倉無益於報酬
     # for msg in check_market_volatility_alerts(df_0050):
@@ -148,6 +149,8 @@ def main():
     for msg in check_stoploss_alerts(unrealized_data):
         alert(msg)
     for msg in check_bear_market_alerts(df_0050):
+        alert(msg)
+    for msg in check_etf_balance_day():
         alert(msg)
 
     # 3. Sidebar 導覽

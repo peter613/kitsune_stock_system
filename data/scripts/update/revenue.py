@@ -90,7 +90,7 @@ def revenue_crawer(name, is_foreign):
             return final_df
 
         except Exception as e:
-            if attempt < 2:
+            if attempt < 1:
                 print(f"[{name}] 第 {attempt+1} 次重試... 原因: {e}")
                 time.sleep(5) # 避免過快請求被封鎖
                 continue

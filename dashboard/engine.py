@@ -11,10 +11,48 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import config
+from datetime import datetime
 
 START_DATE = '2026-03-11'
-INIT_CAP   = 335800
 
+# ──────────────────────────────────────────
+# 輔助：策略月份標籤（每月 11 日或順延的第一個交易日為起點）
+# ──────────────────────────────────────────
+def assign_strategy_month(dates_series: pd.Series, trading_dates: pd.Index) -> pd.Series:
+    """
+    將日期序列對應到「策略月份」。
+    策略月份定義：每個自然月中，第一個 >= 11 日的交易日為該月起始。
+    若當月無 >= 11 日的交易日，以當月最後一個交易日為起始。
+
+    Parameters
+    ----------
+    dates_series   : 要標記的日期 Series (datetime64)
+    trading_dates  : 所有交易日的 DatetimeIndex（用於找到每月實際入場日）
+
+    Returns
+    -------
+    pd.Series[str]  形如 '2026-03' 的月份標籤
+    """
+    trading_dates = pd.DatetimeIndex(trading_dates).normalize()
+
+    # 建立每個自然年月 → 實際入場日的對應表
+    entry_map: dict[str, pd.Timestamp] = {}
+    for ym, grp in pd.Series(trading_dates).groupby(trading_dates.to_period('M')):
+        grp_sorted = grp.sort_values()
+        candidates = grp_sorted[grp_sorted.dt.day >= 11]
+        entry_map[str(ym)] = candidates.iloc[0] if not candidates.empty else grp_sorted.iloc[-1]
+
+    # 依入場日排序，建成切割點列表
+    boundaries = sorted(entry_map.values())
+
+    def _label(d):
+        # 找到最後一個 <= d 的 boundary
+        idx = pd.Series(boundaries).searchsorted(d, side='right') - 1
+        if idx < 0:
+            return boundaries[0].strftime('%Y-%m')
+        return boundaries[idx].strftime('%Y-%m')
+
+    return dates_series.apply(_label)
 
 # ──────────────────────────────────────────
 # 模組 1：資料讀取
@@ -25,6 +63,8 @@ def load_data():
 
     # ── 交易紀錄 ──────────────────────────
     df_record = pd.read_csv(file_path_record, dtype={'id': str})
+    # 強制標準化標籤，確保 'div' 判斷一致
+    df_record['label'] = df_record['label'].str.strip().str.lower()
     df_record.columns = df_record.columns.str.strip().str.lower()
     df_record['date'] = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
     df_record = df_record[df_record['date'] >= START_DATE].copy()
@@ -35,14 +75,12 @@ def load_data():
         np.where(df_record['action'] == 'out', -df_record['price'], 0)
     )
 
-    # ── 內部工具：標準化欄位名稱 ──────────
     def _standardize(df):
         df.columns = df.columns.str.strip().str.lower()
         if 'price' in df.columns and 'close' not in df.columns:
             df = df.rename(columns={'price': 'close'})
         return df
 
-    # ── 市場報價 (寬表 parquet) ────────────
     market_path = config.DATABASE_DIR / "market.parquet"
     if os.path.exists(market_path):
         df_price = pd.read_parquet(market_path)
@@ -52,17 +90,15 @@ def load_data():
     else:
         df_price = pd.DataFrame(columns=['date', 'id', 'close'])
 
-    # ── 防呆：交易紀錄中找不到對應報價的 ID ─
     def _validate_ids(df_record, df_price):
         record_ids = set(df_record[df_record['id'] != 'cash']['id'].unique())
         market_ids = set(df_price['id'].unique())
         orphan_ids = record_ids - market_ids
         if orphan_ids:
-            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal.csv 或 market.csv。")
+            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal.csv。")
 
     _validate_ids(df_record, df_price)
 
-    # ── 基準線 (先算波動率再切片) ──────────
     def _load_bench(name):
         path = config.DATABASE_DIR / f'{name}.csv'
         if not os.path.exists(path):
@@ -70,7 +106,6 @@ def load_data():
         df = pd.read_csv(path, dtype={'id': str})
         df = _standardize(df)
         df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
-        df.columns = [c.lower() for c in df.columns]
         df['daily_return']  = df['close'].pct_change()
         df['realized_vol']  = df['daily_return'].rolling(window=20).std() * (252 ** 0.5)
         return df[df['date'] >= START_DATE].copy()
@@ -86,217 +121,242 @@ def load_data():
 # ──────────────────────────────────────────
 @st.cache_data
 def calculate_daily_history(df_record, df_price, df_0050, df_00631L):
-    # 防呆機制：若無交易紀錄則回傳空表
-    if df_record.empty:
-        return pd.DataFrame()
+    if df_record.empty: return pd.DataFrame()
 
-    # 取得有價格數據的所有交易日排序列表
     dates = sorted(df_price['date'].dropna().unique())
-    if not dates:
-        dates = sorted(df_record['date'].unique())
+    if not dates: dates = sorted(df_record['date'].unique())
 
-    # 紀錄大盤與槓桿ETF的初始價格，作為後續計算基準線報酬的起點
     p0_0050   = df_0050['close'].iloc[0]   if not df_0050.empty   else 1.0
     p0_00631L = df_00631L['close'].iloc[0] if not df_00631L.empty else 1.0
 
-    # 初始化淨值計算系統的核心變數
-    total_units  = 0.0  # 總持有單位數
-    nav_per_unit = 1.0  # 每單位淨值 (初始預設為 1.0)
-    history      = []
+    # ── 總組合 NAV ──
+    total_units  = 0.0
+    nav_per_unit = 1.0
+
+    # ── 子組合 NAV 初始化 ──
+    sub_units  = {'ai': 0.0, 'etf': 0.0, 'other': 0.0}
+    sub_nav_pu = {'ai': 1.0, 'etf': 1.0, 'other': 1.0}
+
+    history = []
 
     for d in dates:
-        # 篩選出截至日期 d 為止的所有歷史交易紀錄
         rec_d = df_record[df_record['date'] <= d]
-        if rec_d.empty:
-            continue
+        if rec_d.empty: continue
 
-        # 取得截至日期 d 為止，各檔股票的「最新」收盤價字典
-        px_d        = df_price[df_price['date'] <= d].groupby('id').tail(1).set_index('id')['close'].to_dict()
-        
-        # 處理現金流與本金
-        cash_rec    = rec_d[rec_d['id'] == 'cash']
-        principal   = cash_rec['cash_flow'].sum() # 歷史累積總投入本金
-        net_cf_today= cash_rec[cash_rec['date'] == d]['cash_flow'].sum() # "當日"發生的淨現金流 (入金為正，出金為負)
-        
-        # 處理股票交易紀錄
-        trades      = rec_d[rec_d['id'] != 'cash'].copy()
-        trades['val'] = trades['price'] * trades['share'] # 交易絕對金額 = 價格 * 股數
+        px_d = df_price[df_price['date'] <= d].groupby('id').tail(1).set_index('id')['close'].to_dict()
 
-        # ── 子投組計算 (含手續費 + 預扣賣出稅費) ──
-        # 此閉包函數用於計算不同標籤 (AI, Other, 或總體) 的市值與損益
-        def _calc_sub(label_filter):
-            sub = trades[trades['label'] == label_filter] if label_filter else trades
-            if sub.empty:
-                return 0.0, 0.0, 0.0
-            
+        # ── 現金流處理 ──
+        cash_rec     = rec_d[rec_d['id'] == 'cash']
+        principal    = cash_rec['cash_flow'].sum()
+        net_cf_today = cash_rec[cash_rec['date'] == d]['cash_flow'].sum()
+        div_cash     = cash_rec[cash_rec['label'] == 'div']['cash_flow'].sum()
+        div_today    = cash_rec[(cash_rec['label'] == 'div') & (cash_rec['date'] == d)]['cash_flow'].sum()
+
+        trades        = rec_d[rec_d['id'] != 'cash'].copy()
+        trades['val'] = trades['price'] * trades['share']
+
+        # ── 總組合市值 ──
+        def _calc_mv(sub):
+            mv = 0.0
+            for aid in sub['id'].unique():
+                a      = sub[sub['id'] == aid]
+                shares = a[a['action'] == 'buy']['share'].sum() - a[a['action'] == 'sell']['share'].sum()
+                if shares > 0:
+                    raw     = shares * px_d.get(aid, 0.0)
+                    tax     = 0.001 if str(aid).startswith('00') else 0.003
+                    mv     += raw - int(raw * 0.001425) - int(raw * tax)
+            return mv
+
+        def _calc_flow(sub):
             buy_mask  = sub['action'] == 'buy'
             sell_mask = sub['action'] == 'sell'
-            
-            # 計算已實現交易的摩擦成本 (買進手續費 0.1425%，賣出手續費 0.1425% + 證交稅 0.3%)
-            buy_fees  = (sub[buy_mask]['val']  * 0.001425).astype(int)
-            sell_fees = (sub[sell_mask]['val'] * 0.001425).astype(int) + (sub[sell_mask]['val'] * 0.003).astype(int)
-            
-            buy_cost      = sub[buy_mask]['val'].sum()  + buy_fees.sum()
-            sell_revenue  = sub[sell_mask]['val'].sum() - sell_fees.sum()
-            net_flow      = sell_revenue - buy_cost # 已實現損益加上投入成本的淨流動
-            
-            mv = 0.0
-            # 結算各檔股票在日期 d 的未實現市值
-            for aid in sub['id'].unique():
-                a_sub  = sub[sub['id'] == aid]
-                shares = a_sub[a_sub['action'] == 'buy']['share'].sum() - a_sub[a_sub['action'] == 'sell']['share'].sum()
-                if shares > 0:
-                    raw_mv = shares * px_d.get(aid, 0.0) # 原始市值
-                    
-                    # 依據股票代碼判斷證交稅率 (00開頭的ETF稅率為 0.1%，一般股票為 0.3%)
-                    if str(aid).startswith('00'):
-                        est_sell_fee = int(raw_mv * 0.001425) + int(raw_mv * 0.001)
-                    else:
-                        est_sell_fee = int(raw_mv * 0.001425) + int(raw_mv * 0.003)
-                    
-                    # 市值需預扣未來的賣出摩擦成本，確保資產估值不被高估
-                    mv += (raw_mv - est_sell_fee)
-            
-            # 單一子投組的簡單報酬率 (市值 + 淨現金流) / 總買入成本
-            roi = (mv + net_flow) / buy_cost if buy_cost > 0 else 0.0
-            return mv, net_flow, roi
+            buy_fees  = (sub[buy_mask]['val'] * 0.001425).astype(int)
+            # 統一使用 id 前綴判斷稅率，與 _calc_mv 一致
+            sell_tax  = sub[sell_mask]['id'].apply(lambda x: 0.001 if str(x).startswith('00') else 0.003)
+            sell_fees = (sub[sell_mask]['val'] * 0.001425).astype(int) + (sub[sell_mask]['val'] * sell_tax).astype(int)
+            return (sub[sell_mask]['val'].sum() - sell_fees.sum()) - (sub[buy_mask]['val'].sum() + buy_fees.sum())
 
-        mv_ai,  _, roi_ai  = _calc_sub('ai')
-        mv_oth, _, roi_oth = _calc_sub('other')
-        mv_tot, flow_tot, _= _calc_sub(None) # 計算整體股票部位
-
-        # ── NAV 淨值法更新 ──────────────────
-        # current_cash = 累積投入本金 + 股票買賣結算後的資金盈虧
+        flow_tot     = _calc_flow(trades)
+        mv_tot       = _calc_mv(trades)
         current_cash = principal + flow_tot
-        # 總淨值 = 帳戶剩餘現金 + 股票當下市值
-        total_nav    = current_cash + mv_tot 
-        
-        # 單位數與淨值計算核心邏輯：確保入金/出金不會影響報酬率曲線
+        total_nav    = current_cash + mv_tot
+
+        # ── 總組合 NAV 更新 ──
         if total_units == 0.0 and net_cf_today > 0:
-            # 系統初次建倉
             nav_per_unit = 1.0
             total_units  = net_cf_today / nav_per_unit
         elif total_units > 0:
-            # 先扣除當日出入金，計算真實的資產增長淨值
             nav_before_cf = total_nav - net_cf_today
             nav_per_unit  = nav_before_cf / total_units
-            
-            # 若當日有資金進出，以最新的淨值折算為單位數進行增減
             if net_cf_today != 0:
                 total_units += net_cf_today / nav_per_unit
 
-        # 總投組真實時間加權報酬率
         roi_total = nav_per_unit - 1.0 if total_units > 0 else 0.0
 
-        # ── 基準線報酬 ──────────────────────
-        # 計算大盤與槓桿ETF截至當日的累積報酬，供圖表對比
+        # ── 子組合 NAV 更新 ──
+        # ai / other：純資本利得，不含配息
+        # etf：含當日股利（配息計入收益但不增加 units）
+        sub_roi = {}
+
+        def _calc_mv_for_holdings(sub_p):
+            """計算給定持倉在今日報價下的市值（含手續費/稅）"""
+            mv = 0.0
+            for aid in sub_p['id'].unique():
+                a = sub_p[sub_p['id'] == aid]
+                shares_held = a[a['action'] == 'buy']['share'].sum() - a[a['action'] == 'sell']['share'].sum()
+                if shares_held > 0:
+                    raw = shares_held * px_d.get(aid, 0.0)
+                    tax = 0.001 if str(aid).startswith('00') else 0.003
+                    mv += raw - int(raw * 0.001425) - int(raw * tax)
+            return mv
+
+        for label in ['ai', 'etf', 'other']:
+            sub = trades[trades['label'] == label]
+
+            # 當日該子組合的買賣現金流
+            sub_today  = sub[sub['date'] == d]
+            buy_today  = sub_today[sub_today['action'] == 'buy']
+            sell_today = sub_today[sub_today['action'] == 'sell']
+
+            buy_val  = buy_today['val'].sum()
+            sell_val = sell_today['val'].sum()
+            buy_fee  = int(buy_val * 0.001425)
+            # 統一用 id 前綴判斷稅率
+            if not sell_today.empty:
+                sell_tax_vec = sell_today['id'].apply(lambda x: 0.001 if str(x).startswith('00') else 0.003)
+                sell_fee = int(sell_val * 0.001425) + int((sell_today['val'] * sell_tax_vec).sum())
+            else:
+                sell_fee = 0
+
+            # net_cf_sub > 0：今日有淨買入（資金流入子組合）
+            net_cf_sub = (buy_val + buy_fee) - (sell_val - sell_fee)
+
+            # ETF 加計當日股利（不增加 units，純收益）
+            div_sub = div_today if label == 'etf' else 0.0
+
+            # 今日交易前的持倉（截至昨日）× 今日報價 = 今日開盤前的子組合淨值
+            sub_prev   = trades[(trades['label'] == label) & (trades['date'] < d)]
+            nav_before = _calc_mv_for_holdings(sub_prev) + div_sub
+
+            if sub_units[label] == 0.0 and net_cf_sub > 0:
+                # 首次買入：初始化
+                sub_nav_pu[label] = 1.0
+                sub_units[label]  = net_cf_sub / sub_nav_pu[label]
+            elif sub_units[label] > 0:
+                # 用昨日持倉 × 今日報價還原每單位淨值（正確還原，不依賴反推）
+                sub_nav_pu[label] = nav_before / sub_units[label]
+
+                # 今日淨買入更新 units
+                if net_cf_sub != 0:
+                    sub_units[label] += net_cf_sub / sub_nav_pu[label]
+
+            sub_roi[label] = sub_nav_pu[label] - 1.0 if sub_units[label] > 0 else 0.0
+
+        # ── 基準指數 ──
         curr_0050   = df_0050[df_0050['date'] <= d]['close'].iloc[-1]   if not df_0050[df_0050['date'] <= d].empty   else p0_0050
         curr_00631L = df_00631L[df_00631L['date'] <= d]['close'].iloc[-1] if not df_00631L[df_00631L['date'] <= d].empty else p0_00631L
-        roi_0050    = (curr_0050   - p0_0050)   / p0_0050
+        roi_0050    = (curr_0050 - p0_0050) / p0_0050
         roi_00631L  = (curr_00631L - p0_00631L) / p0_00631L
 
         history.append({
             'date': d, 'principal': principal, 'current_cash': current_cash,
+            'div_cash': div_cash,
             'total_nav': total_nav, 'roi_total': roi_total,
-            'roi_ai': roi_ai, 'roi_oth': roi_oth,
+            'roi_ai':  sub_roi['ai'],
+            'roi_etf': sub_roi['etf'],
+            'roi_oth': sub_roi['other'],
             'roi_0050': roi_0050, 'roi_00631L': roi_00631L
         })
 
     df_res = pd.DataFrame(history)
-    
-    # 計算最大回撤 (Maximum Drawdown) 供風險控管檢視
     if not df_res.empty:
-        df_res['max_nav'] = df_res['total_nav'].cummax() # 歷史最高淨值
-        df_res['dd_pct']  = (df_res['total_nav'] - df_res['max_nav']) / df_res['max_nav'] # 回撤百分比
-        df_res['dd_twd']  = df_res['total_nav'] - df_res['max_nav'] # 回撤絕對金額
-        
+        df_res['max_nav'] = df_res['total_nav'].cummax()
+        df_res['dd_pct']  = (df_res['total_nav'] - df_res['max_nav']) / df_res['max_nav']
+        df_res['dd_twd']  = df_res['total_nav'] - df_res['max_nav']
+        # 附加策略月份標籤（以實際交易日 >= 11 號為月份起始）
+        df_res['strategy_month'] = assign_strategy_month(df_res['date'], df_res['date'])
+
     return df_res
 
 # ──────────────────────────────────────────
-# 模組 3：資產結算引擎 (供各頁面共用)
+# 模組 3：資產結算引擎 (增加 total_div 回傳)
 # ──────────────────────────────────────────
 @st.cache_data
 def calculate_settlement_data(df_record, df_price):
-    if df_record.empty:
-        return [], [], 0, 0
+    if df_record.empty: return [], [], 0, 0, 0
 
     df_trade  = df_record[df_record['id'] != 'cash'].copy()
     latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict() if not df_price.empty else {}
-
     unrealized_data, realized_data = [], []
 
     for aid in df_trade['id'].unique():
         sub        = df_trade[df_trade['id'] == aid].sort_values('date')
-        cum_shares = 0
-        total_cost = 0
-        shares_sold= 0
-        revenue    = 0
-        cum_buy_fee  = 0
-        cum_sell_fee = 0
-        raw_sell_val = 0
-        stock_name   = sub['name'].iloc[0] if 'name' in sub.columns else ""
+        stock_name = sub['name'].iloc[0] if 'name' in sub.columns else ""
+        tax_rate   = 0.001 if str(aid).startswith('00') else 0.003
+        yahoo_url  = f"https://tw.stock.yahoo.com/quote/{aid}/institutional-trading"
+
+        # ── 逐筆走訪，賣出時快照當下 avg_cost（移動加權平均成本法）──
+        # 這樣攤平買入只影響「剩餘持倉」的成本，不回溯修改已結算的損益
+        cum_shares  = 0.0   # 目前持有股數
+        total_cost  = 0.0   # 目前持倉總成本（含手續費）
+        total_r_pnl = 0.0   # 累積已實現損益
+        total_revenue = 0.0 # 累積回收現金
+        total_sell_cost = 0.0  # 累積已實現成本（用於整體報酬率計算）
+        last_sell_date  = None
 
         for _, row in sub.iterrows():
             trade_val = row['price'] * row['share']
             if row['action'] == 'buy':
-                fee           = int(trade_val * 0.001425)
-                cum_buy_fee  += fee
-                cum_shares   += row['share']
-                total_cost   += trade_val + fee
+                fee         = int(trade_val * 0.001425)
+                cum_shares += row['share']
+                total_cost += trade_val + fee
+
             elif row['action'] == 'sell':
-                fee           = int(trade_val * 0.001425) + int(trade_val * 0.003)
-                cum_sell_fee += fee
-                shares_sold  += row['share']
-                raw_sell_val += trade_val
-                revenue      += trade_val - fee
+                fee = int(trade_val * 0.001425) + int(trade_val * tax_rate)
+                net_revenue = trade_val - fee
 
-        curr_shares  = cum_shares - shares_sold
-        avg_cost     = total_cost / cum_shares if cum_shares > 0 else 0
-        avg_buy_fee  = cum_buy_fee / cum_shares if cum_shares > 0 else 0
-        yahoo_url    = f"https://tw.stock.yahoo.com/quote/{aid}/institutional-trading"
+                # 賣出時快照此刻的平均成本（攤平後的正確值）
+                avg_cost_now = total_cost / cum_shares if cum_shares > 0 else 0
+                sell_cost    = row['share'] * avg_cost_now
 
-        # ── 已實現部分 ──────────────────────
-        if shares_sold > 0:
-            sell_cost            = shares_sold * avg_cost
-            r_pnl                = revenue - sell_cost
-            r_roi_pct            = (r_pnl / sell_cost) * 100 if sell_cost > 0 else 0.0
-            avg_sell_px          = raw_sell_val / shares_sold
-            realized_total_fee   = (shares_sold * avg_buy_fee) + cum_sell_fee
+                total_r_pnl    += net_revenue - sell_cost
+                total_revenue  += net_revenue
+                total_sell_cost+= sell_cost
+
+                # 從持倉扣除：股數與對應成本
+                cum_shares -= row['share']
+                total_cost -= sell_cost
+                last_sell_date = row['date']
+
+        # ── 已實現損益 ──
+        shares_sold = sub[sub['action'] == 'sell']['share'].sum()
+        if shares_sold > 0 and last_sell_date is not None:
             realized_data.append({
-                "代號": yahoo_url,
-                "名稱": stock_name,
-                "累積報酬率": f"{r_roi_pct:.1f}%",
-                "已實現損益": round(r_pnl, 0),
-                "平均成本":   round(avg_cost, 1),
-                "賣出均價":   f"{avg_sell_px:.1f}",
-                "買賣手續費": int(realized_total_fee),
-                "賣出股數":   int(shares_sold),
-                "回收現金":   round(revenue, 0)
+                "日期": last_sell_date.strftime("%Y-%m-%d"),
+                "代號": yahoo_url, "名稱": stock_name,
+                "累積報酬率": f"{(total_r_pnl / total_sell_cost) * 100:.1f}%" if total_sell_cost > 0 else "0%",
+                "已實現損益": round(total_r_pnl, 0),
+                "回收現金":   round(total_revenue, 0)
             })
 
-        # ── 未實現部分 ──────────────────────
-        if curr_shares > 0:
-            px             = latest_px.get(aid, 0.0)
-            mv             = curr_shares * px
-            est_sell_fee   = int(mv * 0.001425) + int(mv * 0.003)
-            u_pnl          = mv - (curr_shares * avg_cost) - est_sell_fee
-            roi_pct        = (u_pnl / (curr_shares * avg_cost)) * 100 if avg_cost > 0 else 0.0
-            unrealized_buy_fee = curr_shares * avg_buy_fee
+        # ── 未實現損益（剩餘持倉用剩餘成本，avg_cost 是攤平後的正確值）──
+        if cum_shares > 0:
+            avg_cost_remain = total_cost / cum_shares if cum_shares > 0 else 0
+            px   = latest_px.get(aid, 0.0)
+            mv   = cum_shares * px
+            est_sell_fee = int(mv * 0.001425) + int(mv * tax_rate)
+            u_pnl = mv - total_cost - est_sell_fee
             unrealized_data.append({
-                "代號": yahoo_url,
-                "名稱": stock_name,
-                "累積報酬率": f"{roi_pct:.1f}%",
-                "未實現損益": round(u_pnl, 0),
-                "平均成本":   round(avg_cost, 1),
-                "最新市價":   f"{px:.1f}",
-                "買入手續費": int(unrealized_buy_fee),
-                "買入股數":   int(curr_shares),
-                "當前市值":   round(mv, 0),
+                "代號": yahoo_url, "名稱": stock_name,
+                "累積報酬率": f"{(u_pnl / total_cost) * 100:.1f}%" if total_cost > 0 else "0%",
+                "未實現損益": round(u_pnl, 0), "當前市值": round(mv, 0)
             })
 
     total_unrealized = sum(item["未實現損益"] for item in unrealized_data)
     total_realized   = sum(item["已實現損益"] for item in realized_data)
-    return unrealized_data, realized_data, total_unrealized, total_realized
+    total_div = df_record[(df_record['id'] == 'cash') & (df_record['label'] == 'div')]['cash_flow'].sum()
+
+    return unrealized_data, realized_data, total_unrealized, total_realized, total_div
 
 
 # ──────────────────────────────────────────
@@ -307,7 +367,7 @@ def check_rebalance_alerts(df_record, df_price):
     if df_record.empty or df_price.empty:
         return []
 
-    df_trade  = df_record[df_record['id'] != 'cash'].copy()
+    df_trade  = df_record[(df_record['id'] != 'cash') & (df_record['id'].str.startswith('00') == False)].copy()
     latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict()
 
     holdings      = {}
@@ -383,4 +443,10 @@ def check_bear_market_alerts(df_0050, threshold=-0.20):
     if drawdown <= threshold:
         return [f"【指令 : 凜冬 】 大盤已從高點回撤 {drawdown*100:.1f}%，正式進入熊市，全面砍倉。"]
     
+    return []
+
+def check_etf_balance_day():
+    """etf季底調整"""
+    if datetime.now().month in [3, 6, 9, 12] and datetime.now().day >= 24:
+        return [f"【指令 : 重構 】ETF與整體投組季底調整"]
     return []

@@ -5,9 +5,18 @@ import subprocess
 import os
 import config
 
-#===note===
-#未來投組比例，etf投組 : 量化投組 : 現金 = 60% : 30% : 10%
-#etf投組， 00731(高息低波) : 00919 : 0056 = 3 : 1 : 1
+""""
+未來投組比例，etf投組 : 量化投組 : 現金 = 60% : 30% : 10%
+etf投組， 00731(高息低波) : 00919 : 0056 = 3 : 1 : 1
+
+jornal action:
+buy / sell : ai，other，etf
+in /out : cash，div(只限etf的股利，若要提款，優先提股利(特別股概念))
+
+jornal cash label:
+div  (id = cash, label = div)
+cash (id = cash, label = 隨意(wage/capital))
+"""
 
 # === 導入新版 Google GenAI SDK ===
 from google import genai
@@ -139,6 +148,14 @@ def add_trade_record(stock_id: str, name: str, action: str, label: str, price: f
     result = update_journal(stock_id, name, action, label, price, share, date)
     return result 
 
+def generate_random_password(length: int = 6) -> str:
+    """生成指定長度的隨機密碼，包含字母和數字。預設長度為 6。"""
+    import random
+    password = f"{random.randint(0, 999999):06d}"
+    print("這個月的隨機密碼：")
+    print(password)
+
+
 # ==========================================
 # 初始化 AI AGENT (新版 Client 架構)
 # ==========================================
@@ -211,12 +228,14 @@ def main():
     
     print("""
 [ 系統使用說明 ]
-* 更新資料：更新今日或指定日期之 database
-* 訓練模型：打包處理模型訓練 (需指定版本)
-* 系統預測：更新特徵與預測 (需指定版本)
-* 歷史回測：回測 (需指定版本跟基準，預設基準為 0050.TW)
-* 開啟儀表：啟動 DASHBOARD 戰情室
-* 寫入交易筆記
+* 更新資料 : 更新今日或指定日期之 database
+* 訓練模型 : 打包處理模型訓練 (需指定版本)
+* 系統預測 : 更新特徵與預測 (需指定版本)
+* 歷史回測 : 回測 (需指定版本跟基準，預設基準為 0050.TW)
+* 開啟儀表 : 啟動 DASHBOARD 戰情室
+* 寫入交易筆記(若大量交易可上傳照片，複製cmd指令)
+(https://gemini.google.com/gem/c33692536ab1/2befc6b47cb88b57)
+* 生成密碼 : 產生隨機密碼避免手癢打開看盤軟體
 """)
     
     print(f"◆ 目前可用模型版本: {get_available_versions()}")

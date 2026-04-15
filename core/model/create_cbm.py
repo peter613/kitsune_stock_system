@@ -17,27 +17,32 @@ def create_cbm(version=None):
     print(f"正在讀取資料: {data_path}")
     df = pd.read_csv(data_path)
     df['date'] = pd.to_datetime(df['date'])
+
     df = df.sort_values(['date', 'id']).reset_index(drop=True)
 
     feature_cols = [
-        # 趨勢與均線
-        "sma20", "sma60", "sma240", "kama", "adx", 
+        #刪掉60日特徵 ("amount60","sma60","r2_60")
+
+        # 均線與技術指標
+        "sma20",  "sma240", "kama", "adx",
         
-        # 趨勢強度與突破
-        "r2_20", "r2_60", "breakout_20", "breakout_240",
+        # 趨勢強度
+        "r2_20",
         
         # 流動性 (Log化)
-        "amount20", "amount60",
+        "amount20",
         
         # 籌碼與法人動能
         "trust_in_5", "t_f_sync",
         
         # 基本面
-        "yoy", "yoy_ma3_bias",
+        "yoy_ma3_bias","yoy",
 
-        # #漲停煞車
-        # "limit_up_count_5d",
+        #突破與築底
+        "breakout_20", "breakout_240",
+        "support_20","support_240",
     ]
+
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
 
     # 4. 切分訓練集 (前 80%) 與 驗證集 (後 20%)
@@ -64,11 +69,11 @@ def create_cbm(version=None):
     # 6. 訓練模型
     model = CatBoostRanker(
         iterations=10000,
-        learning_rate=0.005,
+        learning_rate=0.001,
         depth=6,
         loss_function='YetiRank',
         eval_metric='NDCG:top=5',
-        early_stopping_rounds=1500,
+        # early_stopping_rounds=5000,
         verbose=100,
         random_seed=42,
         custom_metric=['PrecisionAt:top=5'],
