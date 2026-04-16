@@ -1,89 +1,67 @@
 import pandas as pd
+import json
+from catboost import CatBoostRanker, Pool
+import shap
+import matplotlib.pyplot as plt
 import config
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from talib import SMA
 
-# 1. 資料載入與預處理
-market_path = config.DATABASE_DIR / "market.parquet"
-df = pd.read_parquet(market_path)
-df = df.sort_values(['id', 'date'])
+version = 19
 
-# 2. 特徵計算函數 (確保 return group)
-def compute_all_features(group):
-    # 轉換為 float 以符合 TA-Lib 要求
-    c = group['close'].values.astype(float)
-    
-    # 計算均線
-    periods = [5, 10, 20, 60]
-    for p in periods:
-        group[f'ma{p}'] = SMA(c, timeperiod=p)
-        
-    return group
+# 1. 設定路徑 (以 V18 為例)
+model_path = config.CBM_DIR / f"strategy_v{version}.cbm"
+feature_path = config.CBM_DIR / f"feature_names_v{version}.json"
+data_path = config.FEATURES_DIR / f"train_v{version}.csv"
 
-# 執行分組計算 (group_keys=False 保持索引乾淨)
-df = df.groupby('id', group_keys=False).apply(compute_all_features)
+# 2. 載入模型與特徵清單
+with open(feature_path, 'r') as f:
+    feature_cols = json.load(f)
 
-# 3. 篩選特定標的與日期
-target_id = '2330'
-target_date = '2020-01-01'
-# 確保 date 欄位為 datetime 格式後進行篩選
-df['date'] = pd.to_datetime(df['date'])
-target_df = df[(df['id'] == target_id) & (df['date'] > pd.to_datetime(target_date))].copy()
+model = CatBoostRanker()
+model.load_model(model_path)
+print("模型載入成功。")
 
-# 4. 建立圖表 (使用子圖：Row 1 價格, Row 2 成交量)
-fig = make_subplots(
-    rows=2, cols=1, 
-    shared_xaxes=True, 
-    vertical_spacing=0.05, 
-    row_heights=[0.7, 0.3]
+# 3. 準備資料 (只需讀取測試集區間，節省記憶體)
+df = pd.read_csv(data_path)
+# 假設你還是要看最後 20% 的資料
+dates = sorted(df['date'].unique())
+split_idx = int(len(dates) * 0.8)
+test_df = df[df['date'] >= dates[split_idx]]
+
+test_pool = Pool(
+    data=test_df[feature_cols],
+    label=test_df['label'],
+    group_id=test_df['date'].astype('category').cat.codes
 )
 
-# A. 加入 K 線圖 (Row 1)
-fig.add_trace(go.Candlestick(
-    x=target_df['date'],
-    open=target_df['open'],
-    high=target_df['high'],
-    low=target_df['low'],
-    close=target_df['close'],
-    name='K線'
-), row=1, col=1)
+def plot_shap_values(model,test_pool,test_df,X_col):
 
-# B. 自動加入所有 MA 均線 (Row 1)
-ma_cols = [c for c in target_df.columns if c.startswith('ma')]
-for col in ma_cols:
-    fig.add_trace(go.Scatter(
-        x=target_df['date'],
-        y=target_df[col],
-        mode='lines',
-        name=col.upper(),
-        line=dict(width=1)
-    ), row=1, col=1)
+    shap_results = model.get_feature_importance(data=test_pool, type='ShapValues')
+    shap_values_array = shap_results[:, :-1]
+    base_values = shap_results[:, -1]
+    shap_obj = shap.Explanation(
+        values=shap_values_array,        # SHAP 影響力數值
+        base_values=base_values,         # 基準值
+        data=test_df[X_col].values,      # 原始特徵數值 (用來決定紅高藍低)
+        feature_names=X_col              # 特徵名稱
+    )
 
-# C. 加入成交量柱狀圖 (Row 2)
-colors = ['red' if c >= o else 'green' for c, o in zip(target_df.close, target_df.open)]
-fig.add_trace(go.Bar(
-    x=target_df['date'],
-    y=target_df['volume'],
-    name='成交量',
-    marker_color=colors,
-    opacity=0.7
-), row=2, col=1)
+    #繪圖: SHAP 柱狀圖
+    print("繪製 SHAP 柱狀圖...")
+    shap.plots.bar(shap_obj,max_display=15, show=False)
+    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_bar_v{version}.png')
 
-# 5. 佈局設定與移除假日
-fig.update_layout(
-    title=f'Stock Analysis: {target_id}',
-    xaxis_rangeslider_visible=False,
-    template='plotly_white',
-    height=800,
-    showlegend=True
-)
+    # 繪圖: SHAP 蜂群圖
+    print("繪製 SHAP 蜂群圖...")
+    plt.figure() 
+    shap.plots.beeswarm(shap_obj,max_display=15, show=False)
+    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_beeswarm_v{version}.png')
 
-# 移除週末與空白交易日
-fig.update_xaxes(
-    rangebreaks=[
-        dict(bounds=["sat", "mon"]), # 移除週六、週日
-    ]
-)
+    print("繪製 Breakout 發動時的 R 與加分交互作用圖...")
+    # 修改這一行：直接對 shap_obj 進行切片，它支援字串索引
+    interaction_mask = shap_obj[:, "breakout_20"].values > 0
+    shap.plots.scatter(shap_obj[interaction_mask, "r_20_abs"], color=shap_obj[interaction_mask, "breakout_20"], show=False)
 
-fig.show()
+    plt.show()
+
+# 4. 重新執行繪圖函式 (直接呼叫你原本寫好的那個)
+plot_shap_values(model, test_pool, test_df, feature_cols)

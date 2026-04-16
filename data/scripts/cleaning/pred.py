@@ -86,28 +86,29 @@ def create_prediction(stock_filter=True):
         group['t_f_sync'] = group['trust_in_5'] * group['foreign_in_5']
 
         group["amount20"] = SMA(amount_ln, 20)
-        group["amount60"] = SMA(amount_ln, 60)  # 同時用於流動性篩選與特徵
+        #group["amount60"] = SMA(amount_ln, 60)  # 同時用於流動性篩選與特徵
 
         time_idx = np.arange(len(close), dtype=float)
-        r_60 = CORREL(close, time_idx, timeperiod=60)
+        #r_60 = CORREL(close, time_idx, timeperiod=60)
         r_20 = CORREL(close, time_idx, timeperiod=20)
-        group['r2_60'] = np.sign(r_60)* (r_60** 2)
-        group['r2_20'] = np.sign(r_20)* (r_20** 2)
+        #group['r2_60'] = np.sign(r_60)* (r_60** 2)
+        #group['r2_20'] = np.sign(r_20)* (r_20** 2)
+        group['r_20_abs'] = np.abs(r_20)
 
         #突破
         group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)
-        group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
+        #group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
         group['breakout_240'] = close / (MAX(high, timeperiod=240) + 1e-9)
 
         #築底
         group['support_20'] = MAX(low, timeperiod=20) / (close + 1e-9)
-        group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
+        #group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
         group['support_240'] = MAX(low, timeperiod=240) / (close + 1e-9)
 
         group["sma240"] = close / (SMA(close, timeperiod=240) + 1e-9)
-        group["sma60"] = close / (SMA(close, timeperiod=60) + 1e-9)
+        #group["sma60"] = close / (SMA(close, timeperiod=60) + 1e-9)
         group["sma20"] = close / (SMA(close, timeperiod=20) + 1e-9)
-        group["sma10"] = close / (SMA(close, timeperiod=10) + 1e-9)
+        #group["sma10"] = close / (SMA(close, timeperiod=10) + 1e-9)
 
         group["adx"] = ADX(high, low, close, timeperiod=14)
         
@@ -174,15 +175,28 @@ def create_prediction(stock_filter=True):
     # [流動性]
     final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)]
 
-    features = ["sma240","sma60","sma20","sma10",
-                    "adx", "kama",
-                    "breakout_20", "breakout_60", "breakout_240",
-                    "trust_in_5",
-                    "r2_60","r2_20",
-                    "mom", "yoy", "yoy_ma3_bias",
-                    'amount20',"amount60","t_f_sync",
-                    'atr'
-                    ]
+    features = [ 
+        #刪掉60日特徵 ("amount60","sma60","r2_60")
+
+        # 均線與技術指標
+        "sma20",  "sma240", "kama", "adx",
+        
+        # 趨勢強度
+        "r_20_abs",
+        
+        # 流動性 (Log化)
+        "amount20",
+        
+        # 籌碼與法人動能
+        "trust_in_5", "t_f_sync",
+        
+        # 基本面
+        "yoy_ma3_bias","yoy",
+
+        #突破與築底
+        "breakout_20", "breakout_240",
+        "support_20","support_240",
+    ]
 
     print("正在執行特徵去極值處理...")
     final_predict_df = clean_outliers(final_predict_df, features)

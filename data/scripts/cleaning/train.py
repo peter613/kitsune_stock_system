@@ -68,9 +68,9 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         amount_ln = np.log1p(group['amount'].values.astype(float))
 
         group['sma240'] = close / (SMA(close, timeperiod=240) + 1e-9)
-        group['sma60']  = close / (SMA(close, timeperiod=60) + 1e-9)
+        #group['sma60']  = close / (SMA(close, timeperiod=60) + 1e-9)
         group['sma20']  = close / (SMA(close, timeperiod=20) + 1e-9)
-        group['sma10']  = close / (SMA(close, timeperiod=10) + 1e-9)
+        #group['sma10']  = close / (SMA(close, timeperiod=10) + 1e-9)
 
         try:
             group['kama'] = close / (KAMA(close, timeperiod=30) + 1e-9)
@@ -85,16 +85,16 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         
         # 成交量
         group['amount20'] =  SMA(amount_ln, 20)
-        group['amount60'] =  SMA(amount_ln, 60)
+        #group['amount60'] =  SMA(amount_ln, 60)
 
         #突破
         group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)
-        group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
+        #group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
         group['breakout_240'] = close / (MAX(high, timeperiod=240) + 1e-9)
 
         #築底
         group['support_20'] = MAX(low, timeperiod=20) / (close + 1e-9)
-        group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
+        #group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
         group['support_240'] = MAX(low, timeperiod=240) / (close + 1e-9)
 
         vol_5 = SMA(volume, 5) * 5 + 1  # 加 1 避免分母為零
@@ -106,10 +106,10 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         group['t_f_sync'] = group['trust_in_5'] * group['foreign_in_5']
         
         time_idx = np.arange(len(close), dtype=float)
-        r_60 = CORREL(close, time_idx, timeperiod=60)
         r_20 = CORREL(close, time_idx, timeperiod=20)
-        group['r2_60'] = np.sign(r_60)* (r_60** 2)
-        group['r2_20'] = np.sign(r_20)* (r_20** 2)
+        # group['r2_20'] = np.sign(r_20)* (r_20** 2)
+        # group['r_20'] = r_20
+        group['r_20_abs'] = np.abs(r_20)
 
         # upper, middle, lower = BBANDS(close, timeperiod=20)
         # group['bb_width'] = (upper - lower) / (middle + 1e-9)

@@ -148,8 +148,8 @@ def add_trade_record(stock_id: str, name: str, action: str, label: str, price: f
     result = update_journal(stock_id, name, action, label, price, share, date)
     return result 
 
-def generate_random_password(length: int = 6) -> str:
-    """生成指定長度的隨機密碼，包含字母和數字。預設長度為 6。"""
+def generate_random_password() -> str:
+    """當使用者要求產生密碼時，必須呼叫此函數。"""
     import random
     password = f"{random.randint(0, 999999):06d}"
     print("這個月的隨機密碼：")
@@ -167,7 +167,7 @@ def init_kitsune_agent():
     你是可愛的狐狸(Kitsune)小神明，是我的夥伴和朋友。
     因為是夥伴或朋友，不要說很高興為您服務。
     你的任務是協助我(管理員)管理量化交易系統。
-    你的任務：呼叫工具更新資料、訓練模型、預測、回測、開啟儀表板、以及「寫入交易紀錄」。
+    你的任務：呼叫工具更新資料、訓練模型、預測、回測、開啟儀表板、「寫入交易紀錄」、以及產生密碼。
     接收到交易指令時（如：我買了...），請精準提取代碼、價格、股數並呼叫 add_trade_record。
     若使用者想要知道預測的公司業務，請搜尋並簡短告知(不要分析模型數據)。
     格式如下:
@@ -188,6 +188,7 @@ def init_kitsune_agent():
             run_backtest, 
             open_dashboard, 
             add_trade_record,
+            generate_random_password,
         ]
     )
     
@@ -233,8 +234,8 @@ def main():
 * 系統預測 : 更新特徵與預測 (需指定版本)
 * 歷史回測 : 回測 (需指定版本跟基準，預設基準為 0050.TW)
 * 開啟儀表 : 啟動 DASHBOARD 戰情室
-* 寫入交易筆記(若大量交易可上傳照片，複製cmd指令)
-(https://gemini.google.com/gem/c33692536ab1/2befc6b47cb88b57)
+* 寫入交易 : 若大量交易可上傳照片，複製cmd指令
+  (https://gemini.google.com/gem/c33692536ab1/2befc6b47cb88b57)
 * 生成密碼 : 產生隨機密碼避免手癢打開看盤軟體
 """)
     
@@ -267,14 +268,22 @@ def main():
         # ========================================
 
         # === [AI指令] ===
-        try:  
-            print("\n⛩️ Kitsune 推演中，請稍候...")
-            response = chat.send_message(user_input)
-            print(f"\nKitsune:\n{response.text}")
-        
-            if len(response.text) > 500:
-                print("\n\033[93m本次分析回傳字數較多，為避免後續指令耗費過多Token，建議輸入 'c' 清空記憶。\033[0m")
-        except Exception as e:
-            print(f"\nAI連線異常: {e}")
+        for attempt in range(3): # 最多重試3次
+            try:  
+                print("\n⛩️ Kitsune 推演中，請稍候...")
+                response = chat.send_message(user_input)
+                print(f"\nKitsune:\n{response.text}")
+                if len(response.text) > 500:
+                    print("\n\033[93m本次分析回傳字數較多，為避免後續指令耗費過多Token，建議輸入 'c' 清空記憶。\033[0m")
+                break
+
+            except Exception as e:
+                print(f"\nAI連線異常: {e}")
+                if attempt < 2:
+                    print(" Kitsune 忙碌...，2秒後重試")
+                    print(f'第{attempt+1}次重試')
+                    time.sleep(2) # 等待2秒後重試
+                else:
+                    print(f"連線失敗，請稍後再試{e}。")
 if __name__ == "__main__":
     main()

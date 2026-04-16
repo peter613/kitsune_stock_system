@@ -284,7 +284,11 @@ def update_market_data(specific_date=None):
     # 統一將 date 轉為 YYYY-MM-DD 格式，方便閱讀與排序
     df_new['date'] = pd.to_datetime(standard_date_str) # 直接賦值標準格式
     new_count = len(df_new)
-    print(f"本次成功獲取資料: {new_count} 筆")
+
+    # 每日爬蟲 NaN 檢查
+    print(f"\n今天nan值分布:")
+    nan_dist = df_new.isna().sum()
+    print(nan_dist[nan_dist > 0].to_string() if nan_dist.sum() > 0 else "無缺失值")
 
     # 2. 資料庫讀取與更新邏輯
     if os.path.exists(FILE_NAME):
@@ -309,6 +313,7 @@ def update_market_data(specific_date=None):
             
             # 計算差額並顯示稽核資訊
             diff = new_count - last_update_count
+            print(f"\n本次成功獲取資料: {new_count} 筆")
             print(f"資料合併成功，目前總筆數: {len(df_final)} (與上筆資料差額: {diff})")
             
         except Exception as e:

@@ -15,6 +15,7 @@ JOURNAL_DIR = BASE_DIR / "journal"
 # Reports Path
 BACKTEST_TRADELOG_DIR = BASE_DIR / "reports" /"backtest_tradelogs"
 PREDICTION_REPORT_DIR = BASE_DIR / "reports" /"monthly_predictions"
+PLOTS_REPORT_DIR = BASE_DIR / "reports" /"plots"
 
 #dashboard path
 DASHBOARD_DIR = BASE_DIR / "dashboard"

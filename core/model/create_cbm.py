@@ -1,10 +1,40 @@
+import matplotlib
 import pandas as pd
 import numpy as np
-from catboost import CatBoostRanker, Pool
+from catboost import CatBoostRanker, Pool, version
 import os
 import json
 from datetime import datetime
 import config
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+import shap
+
+def plot_shap_values(model,test_pool,test_df,X_col,version):
+
+    shap_results = model.get_feature_importance(data=test_pool, type='ShapValues')
+    shap_values_array = shap_results[:, :-1]
+    base_values = shap_results[:, -1]
+    shap_obj = shap.Explanation(
+        values=shap_values_array,        # SHAP 影響力數值
+        base_values=base_values,         # 基準值
+        data=test_df[X_col].values,      # 原始特徵數值 (用來決定紅高藍低)
+        feature_names=X_col              # 特徵名稱
+    )
+
+    #繪圖: SHAP 柱狀圖
+    print("繪製 SHAP 柱狀圖...")
+    shap.plots.bar(shap_obj,max_display=15, show=False)
+    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_bar_v{version}.png')
+
+    # 繪圖: SHAP 蜂群圖
+    print("繪製 SHAP 蜂群圖...")
+    plt.figure() 
+    shap.plots.beeswarm(shap_obj,max_display=15, show=False)
+    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_beeswarm_v{version}.png')
+
+    plt.show()
 
 def create_cbm(version=None):
     # 1. 設定路徑
@@ -27,7 +57,7 @@ def create_cbm(version=None):
         "sma20",  "sma240", "kama", "adx",
         
         # 趨勢強度
-        "r2_20",
+        'r_20_abs', #"r2_20",
         
         # 流動性 (Log化)
         "amount20",
@@ -51,7 +81,7 @@ def create_cbm(version=None):
     split_date = dates[split_idx]
 
     train_df = df[df['date'] < split_date]
-    val_df = df[df['date'] >= split_date]
+    test_df = df[df['date'] >= split_date]
 
     # 5. 建立 Pool
     train_pool = Pool(
@@ -60,10 +90,10 @@ def create_cbm(version=None):
         group_id=train_df['date'].astype('category').cat.codes
     )
 
-    val_pool = Pool(
-        data=val_df[feature_cols],
-        label=val_df['label'],
-        group_id=val_df['date'].astype('category').cat.codes
+    test_pool = Pool(
+        data=test_df[feature_cols],
+        label=test_df['label'],
+        group_id=test_df['date'].astype('category').cat.codes
     )
 
     # 6. 訓練模型
@@ -80,7 +110,7 @@ def create_cbm(version=None):
     )
 
     print("開始訓練模型...")
-    model.fit(train_pool, eval_set=val_pool)
+    model.fit(train_pool, eval_set=test_pool)
 
     # 7. 封存 (Save)
     # 儲存模型本體 (.cbm)
@@ -93,5 +123,8 @@ def create_cbm(version=None):
         json.dump(feature_cols, f)
     print(f"特徵列表已備份至: {feature_save_path_json}")
 
+    #shap
+    plot_shap_values(model,test_pool,test_df,feature_cols,version)
+
 if __name__ == "__main__":
-    create_cbm(version='v18')
+    create_cbm(version='v19')

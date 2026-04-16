@@ -125,7 +125,9 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
     BALANCE_HIGH     = 0.25    # 再平衡上限：單股超過 25% 時修剪
     BALANCE_TARGET   = 0.20    # 修剪至 20%
-    VOL_THRESHOLD    = 0.99    # 大盤波動率超過砍半倉(目前關掉緊報，因為回測績效差)
+    VOL_FILTER_ON    = False   # 大盤波動砍半倉開關（True = 啟用）
+    VOL_THRESHOLD    = 0.30    # 波動率閾值（年化，僅 VOL_FILTER_ON=True 時生效）
+    TRUST_ON         = False   # 是否啟用投信過濾（True = 剔除投信買賣超近 20 日完全為 0 的標的）
 
     rank_str = ','.join(map(str, select_rank))
     print(f"\n啟動回測系統 V2 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
@@ -138,6 +140,13 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     test_df = df[df['date'] >= cutoff_date].copy()
     test_df = test_df.sort_values(['date', 'id']).reset_index(drop=True)
 
+    #篩選投信為0
+    # 測試濾網：剔除近 20 日「投信買賣超完全為 0」的死水標的 (可隨時註解關閉)
+    if TRUST_ON:
+        test_df = test_df[test_df.groupby('id')['Trust_Net'].transform(lambda x: x.abs().rolling(window=20, min_periods=1).sum()) > 0].reset_index(drop=True)
+    else:
+        pass
+    
     # ── 2. 模型評分 ──────────────────────────────────
     model = CatBoostRanker()
     model.load_model(MODEL_FILE)
@@ -153,17 +162,20 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
     # ── 3. 大盤波動率序列 ──────────────────────────────
     print("初始化大盤波動率雷達 (0050.TW)...")
     vol_series = pd.Series(dtype=float)
-    try:
-        raw = yf.download('0050.TW', start='2020-01-01', progress=False)
-        if isinstance(raw.columns, pd.MultiIndex):
-            close = raw['Close'].iloc[:, 0]
-        else:
-            close = raw['Close']
-        close.index = pd.to_datetime(close.index).tz_localize(None)
-        vol_series = close.pct_change().rolling(20).std() * (252 ** 0.5)
-        vol_series = vol_series.dropna()
-    except Exception as e:
-        print(f"波動率模組失效: {e}")
+    if VOL_FILTER_ON:
+        try:
+            raw = yf.download('0050.TW', start='2020-01-01', progress=False)
+            if isinstance(raw.columns, pd.MultiIndex):
+                close = raw['Close'].iloc[:, 0]
+            else:
+                close = raw['Close']
+            close.index = pd.to_datetime(close.index).tz_localize(None)
+            vol_series = close.pct_change().rolling(20).std() * (252 ** 0.5)
+            vol_series = vol_series.dropna()
+        except Exception as e:
+            print(f"波動率模組失效: {e}")
+    else:
+        pass
 
     # ── 4. 市場日頻資料 ──────────────────────────────
     market_df = pd.read_parquet(config.DATABASE_DIR / "market.parquet")
@@ -241,9 +253,11 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
                     break
 
             # 【日檢查 1】大盤波動砍半倉
-            if (today_date is not None
-                    and not has_scaled_down
-                    and len(vol_series) > 0):
+            if (VOL_FILTER_ON 
+                and today_date is not None
+                and not has_scaled_down
+                and len(vol_series) > 0
+                ):
                 check_ts = pd.to_datetime(today_date).tz_localize(None)
                 try:
                     cur_vol = vol_series.asof(check_ts)
@@ -520,4 +534,4 @@ def backtester(version='v16', select_rank=None, benchmark='00631L.TW'):
 
 
 if __name__ == "__main__":
-    backtester(version='v18', select_rank=list(range(1,6)), benchmark='00631L.TW')
+    backtester(version='v19', select_rank=list(range(1,6)), benchmark='00631L.TW')
