@@ -2,6 +2,7 @@
 venv/
 __pycache__/
 *.pyc
+.vscode/
 
 # 安裝與編譯暫存
 build/
@@ -11,7 +12,7 @@ catboost_info/
 
 # 敏感設定 (等一下我們會把 API Key 移到這裡)
 .env
-config_private.py
 
-#檔案太大無法上傳
-data/database/
+#檔案太大
+*.csv
+*.parquet

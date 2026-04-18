@@ -27,38 +27,23 @@ import config
 from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
+
 # 匯入模組
-try:
-    from data.scripts.update.market import update_market_data
-    from data.scripts.update.gold import update_gold
-    from data.scripts.update._00631 import update_00631
-    from data.scripts.update._0050 import update_0050
-    from data.scripts.update.revenue import update_revenue
-    from core.model.prediction import prediction
-    from core.backtest.simulator import backtester
-    from data.scripts.cleaning.train import create_training
-    from data.scripts.cleaning.pred import create_prediction
-    from core.model.create_cbm import create_cbm
-    from journal.update_journal import update_journal
+from kitsune_fund.management.data.scripts.update.market import update_market_data
+from kitsune_fund.management.data.scripts.update._00631 import update_00631
+from kitsune_fund.management.data.scripts.update._0050 import update_0050
+from kitsune_fund.management.data.scripts.update.revenue import update_revenue
+from kitsune_fund.management.core.prediction import prediction
+from kitsune_fund.management.core.bt_simulator import backtester
+from kitsune_fund.management.data.scripts.cleaning.train import create_training
+from kitsune_fund.management.data.scripts.cleaning.pred import create_prediction
+from kitsune_fund.management.core.create_cbm import create_cbm
+from kitsune_fund.management.journal.update_journal import update_journal
 
-except ImportError as e:
-    print(f"錯誤：找不到檔案\n詳細錯誤: {e}")
-    sys.exit()
-
-# -----------------
-# 系統工具定義 
-# -----------------
+# =================
+# 系統工具定義(指令)
+# =================
 def update_database(backfill_date: str = None) -> str:
-    """
-    [核心功能]: 更新交易資料庫至最新狀態。
-    
-    [邏輯決策規則]:
-    1. 預設行為: 若使用者要求「更新資料」、「同步今日資料」、「執行每日更新」，請務必將 specific_date 設為 None。
-    2. 例外行為: 只有當使用者「明確指定」某個過去的日期（例如：回補 2025-05-20、修正舊資料），才需傳入 'YYYY-MM-DD'。
-    
-    [參數說明]:
-    specific_date: 僅用於「回補歷史」。若無明確日期，請保持預設值 None 以執行今日自動更新。
-    """
     if backfill_date:
         print(f"\n回補指定日期: {backfill_date}")
     else:
@@ -75,8 +60,49 @@ def update_database(backfill_date: str = None) -> str:
     update_market_data(backfill_date)
     
     target_date = backfill_date if backfill_date else "今日"
-    return f"{target_date} 之資料庫已全面更新與回補完畢。"
+    return f"\n{target_date} 之資料庫已全面更新或回補完畢。"
 
+def open_dashboard_fund() -> str:
+    """啟動 Streamlit fund 視覺化儀表板/戰情室/dashboard。"""
+    print("啟動基金儀表板...")
+    # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
+
+    target_path = r"C:\Users\Lynn610\Documents\kitsune_stock_system"
+
+    cmd = (
+        f'start /D "{target_path}" cmd /k '
+        f'"set PYTHONPATH=. && '
+        f'venv\\Scripts\\activate && '
+        f'streamlit run {config.DASHBOARD_FUND_DIR}/app_fund.py"'
+    )
+        
+    subprocess.Popen(cmd, shell=True)
+    return "\n儀表板已成功在背景啟動。"
+
+def open_dashboard_port() -> str:
+    print("啟動投組儀表板...")
+    # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
+
+    target_path = r"C:\Users\Lynn610\Documents\kitsune_stock_system"
+
+    cmd = (
+        f'start /D "{target_path}" cmd /k '
+        f'"set PYTHONPATH=. && '
+        f'venv\\Scripts\\activate && '
+        f'streamlit run {config.DASHBOARD_PORT_DIR}/app_port.py"'
+    )
+        
+    subprocess.Popen(cmd, shell=True)
+    return "儀表板已成功在背景啟動。"
+
+def generate_random_password() -> str:
+    import random
+    password = f"{random.randint(0, 999999):06d}"
+    return f"這個月的隨機密碼：{password}"
+
+# =================
+# 系統工具定義(AI)
+# =================
 def train_model(version: str) -> str:
     """建立訓練特徵並訓練新版本的 CBM 模型。必須輸入版本號 (例如 v11)。"""
     print(f"準備訓練版本: {version}")
@@ -112,17 +138,6 @@ def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
     backtester(version=version, benchmark=benchmark, select_rank=select_rank)
     return f"版本 {version} 回測執行完畢，績效報告已產出。"
 
-def open_dashboard() -> str:
-    """啟動 Streamlit 視覺化儀表板/戰情室/dashboard。"""
-    print("啟動儀表板...")
-    # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
-
-    target_path = r"C:\Users\Lynn610\Documents\kitsune_stock_system"
-    cmd = f'start /D "{target_path}" cmd /k "set PYTHONPATH=. && streamlit run {config.DASHBOARD_DIR}/app.py"'
-    
-    subprocess.Popen(cmd, shell=True)
-    return "儀表板已成功在背景啟動。"
-
 def add_trade_record(stock_id: str, name: str, action: str, label: str, price: float, share: float, date: str = None) -> str:
     """
     將交易或出入金紀錄寫入 journal.csv。
@@ -148,14 +163,6 @@ def add_trade_record(stock_id: str, name: str, action: str, label: str, price: f
     result = update_journal(stock_id, name, action, label, price, share, date)
     return result 
 
-def generate_random_password() -> str:
-    """當使用者要求產生密碼時，必須呼叫此函數。"""
-    import random
-    password = f"{random.randint(0, 999999):06d}"
-    print("這個月的隨機密碼：")
-    print(password)
-
-
 # ==========================================
 # 初始化 AI AGENT (新版 Client 架構)
 # ==========================================
@@ -167,14 +174,13 @@ def init_kitsune_agent():
     你是可愛的狐狸(Kitsune)小神明，是我的夥伴和朋友。
     因為是夥伴或朋友，不要說很高興為您服務。
     你的任務是協助我(管理員)管理量化交易系統。
-    你的任務：呼叫工具更新資料、訓練模型、預測、回測、開啟儀表板、「寫入交易紀錄」、以及產生密碼。
+    你的任務：呼叫工具訓練模型、預測、回測、「寫入交易紀錄」
     接收到交易指令時（如：我買了...），請精準提取代碼、價格、股數並呼叫 add_trade_record。
     若使用者想要知道預測的公司業務，請搜尋並簡短告知(不要分析模型數據)。
     格式如下:
     3167 大量: PCB/半導體設備商
     若不知道參數，請詢問管理員。
     請簡單扼要回答，不需過度冗長。
-    當使用者提到「更新資料庫」且未提及具體日期時，視為「每日例行任務」，呼叫 update_database(specific_date=None)。禁止擅自推測或填入今日日期。
     """
     
     # 2. 定義系統行為設定 (Config)
@@ -182,13 +188,10 @@ def init_kitsune_agent():
         system_instruction=system_prompt,
         temperature=0.2, # 稍微降溫讓分析結果更嚴謹穩定
         tools=[
-            update_database, 
             train_model, 
             run_prediction, 
             run_backtest, 
-            open_dashboard, 
             add_trade_record,
-            generate_random_password,
         ]
     )
     
@@ -197,7 +200,6 @@ def init_kitsune_agent():
         model="gemini-3.1-flash-lite-preview",
         config=agent_config
     )
-    # print([m.name for m in client.models.list()])
     return client, agent_config, chat
 
 # ==========================================
@@ -218,53 +220,87 @@ def get_available_versions():
     return sorted(versions)
 
 def main():
-    type_effect("\n>> INITIALIZING KITSUNE KERNEL...")
+    print('')
+    type_effect("   >> INITIALIZING KITSUNE KERNEL...")
     time.sleep(0.3)
-    type_effect(">> 自分の道を見つけるんだ")
+    type_effect("   >> 自分の道を見つけるんだ")
     time.sleep(0.3)
-    type_effect(">> WELCOME ", 0.05, end_new_line=False)
-    type_effect("\033[1;94m[ ARCHITECT ]\033[0m", 0.05)
+    type_effect("   >> WELCOME ", 0.05, end_new_line=False)
+    type_effect("   \033[1;94m[ ARCHITECT ]\033[0m", 0.05)
     time.sleep(0.3)
-    type_effect("="*45, 0.01)
+    print('')
     
     print("""
-[ 系統使用說明 ]
-* 更新資料 : 更新今日或指定日期之 database
-* 訓練模型 : 打包處理模型訓練 (需指定版本)
-* 系統預測 : 更新特徵與預測 (需指定版本)
-* 歷史回測 : 回測 (需指定版本跟基準，預設基準為 0050.TW)
-* 開啟儀表 : 啟動 DASHBOARD 戰情室
-* 寫入交易 : 若大量交易可上傳照片，複製cmd指令
-  (https://gemini.google.com/gem/c33692536ab1/2befc6b47cb88b57)
-* 生成密碼 : 產生隨機密碼避免手癢打開看盤軟體
-""")
-    
-    print(f"◆ 目前可用模型版本: {get_available_versions()}")
-    print("◆ 可用 Benchmark: 0050.TW & 00631L.TW\n")
+    [ 小狐狸AI助手使用說明 ]\n
+    我可以幫你:          
+    * 訓練模型 : 打包處理模型訓練 (需指定版本)
+    * 系統預測 : 更新特徵與預測 (需指定版本)
+    * 歷史回測 : 回測 (需指定版本跟基準，預設基準為 0050.TW)
+    * 寫入交易 : 若大量交易可上傳照片，複製cmd指令
+    (https://gemini.google.com/gem/c33692536ab1/2befc6b47cb88b57)
+            
+    [ 其他功能需輸入指令，輸入/help查看指令集 ]\n
+    """)
+    print(f"   ◆ 目前可用模型版本: {get_available_versions()}")
+    print("   ◆ 可用 Benchmark: 0050.TW & 00631L.TW\n\n")
 
     # 初始化 AI 代理
     client, agent_config, chat = init_kitsune_agent()
-    print("小狐狸初始化...")
+  
     while True:
         user_input = input("\n請輸入>> ").strip()
         
         if not user_input:
             type_effect("程式結束。")
-            time.sleep(1.5)
+            time.sleep(0.1)
             break
 
         # === [手動指令] ===
-        if user_input == "/update":
-            print("\n[系統] 啟動手動強制更新流程...")
+        #dashboard，簡寫dash，dash又等於-
+        #f是fund；p是portfolio
+        if user_input == "/help":
+            print("""\n
+    /db : 更新當日資料庫
+    /db_YYYY-MM-DD : 回補指定日期資料庫\n  
+    /-f : 打開基金儀表板(經理人)             
+    /-p : 打開投組儀表板(投資者)\n
+    /pw : 產生隨機密碼(避免手癢打開看盤軟體)\n
+    /cls : 清空畫面
+    """)
+            continue
+
+        if user_input == "/db":
+            print("\n[系統] 更新資料庫...")
             res = update_database() # 直接呼叫函式
-            print(f"結果: {res}")
-            continue # 跳過後面的 AI 連線
+            print(f"{res}")
+            continue
             
-        elif user_input == "/dashboard":
-            print("\n[系統] 啟動手動強制開啟儀表板...")
-            res = open_dashboard() # 直接呼叫函式
-            print(f"結果: {res}")
-            continue # 跳過後面的 AI 連線
+        elif user_input == "/db_YYYY-MM-DD":
+            date_str = user_input.replace("/db_", "")
+            print(f"\n[系統] 回補資料庫，指定日期: {date_str}")
+            res = update_database(backfill_date=date_str)
+            print(f"{res}")
+            continue
+
+        elif user_input == "/-f":
+            print("\n[系統] 開啟經理人儀表板...")
+            res = open_dashboard_fund() 
+            print(f"{res}")
+            continue 
+
+        elif user_input == "/-p":
+            print("\n[系統] 開啟投資者儀表板...")
+            res = open_dashboard_port() 
+            print(f"{res}")
+            continue
+        elif user_input == "/pw":
+            print("\n[系統] 產生隨機密碼...")
+            res = open_dashboard_fund() 
+            print(f"{res}")
+            continue
+        elif user_input == "/cls":
+            os.system('cls')
+            continue
         # ========================================
 
         # === [AI指令] ===
@@ -273,10 +309,7 @@ def main():
                 print("\n⛩️ Kitsune 推演中，請稍候...")
                 response = chat.send_message(user_input)
                 print(f"\nKitsune:\n{response.text}")
-                if len(response.text) > 500:
-                    print("\n\033[93m本次分析回傳字數較多，為避免後續指令耗費過多Token，建議輸入 'c' 清空記憶。\033[0m")
                 break
-
             except Exception as e:
                 print(f"\nAI連線異常: {e}")
                 if attempt < 2:
