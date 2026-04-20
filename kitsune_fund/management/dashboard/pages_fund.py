@@ -331,7 +331,7 @@ def page_fund_quality(df_history):
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Sharpe",   f"{sharpe:.2f}")
     col2.metric("Calmar",   f"{calmar:.2f}")
-    col3.metric("波動率",   f"{port_vol:.1f}%")
+    col3.metric("20日波動率",   f"{port_vol:.1f}%")
     col4.metric("最大回撤", f"{max_dd:.2f}%")
 
     # ── 圖1：Rolling 20日 Sharpe ──

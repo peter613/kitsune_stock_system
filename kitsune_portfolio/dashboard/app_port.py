@@ -81,7 +81,7 @@ def main():
         )
         st.divider()
 
-        selected_name = st.radio("投資人", list(subscribers.keys()))
+        selected_name = st.radio("投資人", list(reversed(subscribers.keys())))
         st.divider()
         selected_page = st.radio("頁面", list(_PAGES.keys()))
 

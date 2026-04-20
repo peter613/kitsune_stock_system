@@ -24,24 +24,24 @@ df_0050['daily_return'] = df_0050[price_col].pct_change()
 df_0050['realized_vol'] = df_0050['daily_return'].rolling(window=20).std() * np.sqrt(252)
 
 # 3. 繪圖
-plt.figure(figsize=(15, 7))
-plt.plot(df_0050.index, df_0050['realized_vol'], label='20D Realized Volatility', color='#1f77b4', linewidth=1.5)
-plt.axhline(y=0.3, color='red', linestyle='--', alpha=0.8, label='Black Swan Threshold (0.3)')
-plt.fill_between(df_0050.index, df_0050['realized_vol'], 0.3, 
-                 where=(df_0050['realized_vol'] >= 0.3), color='red', alpha=0.2)
+# plt.figure(figsize=(15, 7))
+# plt.plot(df_0050.index, df_0050['realized_vol'], label='20D Realized Volatility', color='#1f77b4', linewidth=1.5)
+# plt.axhline(y=0.3, color='red', linestyle='--', alpha=0.8, label='Black Swan Threshold (0.3)')
+# plt.fill_between(df_0050.index, df_0050['realized_vol'], 0.3, 
+#                  where=(df_0050['realized_vol'] >= 0.3), color='red', alpha=0.2)
 
-# 圖表美化
-plt.title('0050 Market Volatility Radar', fontsize=16)
-plt.ylabel('Annualized Volatility (%)', fontsize=12)
-plt.xlabel('Date', fontsize=12)
-plt.grid(True, alpha=0.3)
-plt.legend(loc='upper left')
+# # 圖表美化
+# plt.title('0050 Market Volatility Radar', fontsize=16)
+# plt.ylabel('Annualized Volatility (%)', fontsize=12)
+# plt.xlabel('Date', fontsize=12)
+# plt.grid(True, alpha=0.3)
+# plt.legend(loc='upper left')
 
-# 修正：使用 PercentFormatter 解決警告，並設定 Y 軸格式
-plt.gca().yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+# # 修正：使用 PercentFormatter 解決警告，並設定 Y 軸格式
+# plt.gca().yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
 
-plt.tight_layout()
-plt.show()
+# plt.tight_layout()
+# plt.show()
 
 # 檢查最後五筆，確認 NaN 結束的位置
 print(df_0050['realized_vol'].tail(5))
