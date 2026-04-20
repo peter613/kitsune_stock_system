@@ -26,7 +26,7 @@ from pages_fund import (
 # ──────────────────────────────────────────
 # 全域設定
 # ──────────────────────────────────────────
-st.set_page_config(page_title="Kitsune Kernel", layout="wide")
+st.set_page_config(page_title="Kitsune Fund", layout="wide")
 
 _CSS = """
 <style>

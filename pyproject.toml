@@ -23,10 +23,11 @@ dependencies = [
     "lxml",
     "pyarrow",
     "google-genai",
-    "dotenv"
+    "dotenv",
+    "html5lib"
 ]
 
 [tool.setuptools]
 # 這裡就是架構師的明確授權：定義範圍
-packages = ['kitsune_fund','kitsune_portofolio']#資料夾
+packages = ['kitsune_fund','kitsune_portfolio']#資料夾
 py-modules = ["config"]#檔案

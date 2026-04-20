@@ -53,8 +53,8 @@ def update_database(backfill_date: str = None) -> str:
         print('\n執行每日更新...')
         
     print('\n更新大盤(正二/0050)....')
-    update_00631(backfill_date)
-    update_0050(backfill_date)
+    update_00631()
+    update_0050()
     
     print('\n更新股市....')
     update_market_data(backfill_date)
@@ -261,9 +261,10 @@ def main():
         if user_input == "/help":
             print("""\n
     /db : 更新當日資料庫
-    /db_YYYY-MM-DD : 回補指定日期資料庫\n  
+    /db_YYYYMMDD : 回補指定日期資料庫\n  
     /-f : 打開基金儀表板(經理人)             
-    /-p : 打開投組儀表板(投資者)\n
+    /-p : 打開投組儀表板(投資者)
+    /-  : 打開所有儀表板\n
     /pw : 產生隨機密碼(避免手癢打開看盤軟體)\n
     /cls : 清空畫面
     """)
@@ -275,7 +276,7 @@ def main():
             print(f"{res}")
             continue
             
-        elif user_input == "/db_YYYY-MM-DD":
+        elif user_input.startswith("/db_"):
             date_str = user_input.replace("/db_", "")
             print(f"\n[系統] 回補資料庫，指定日期: {date_str}")
             res = update_database(backfill_date=date_str)
@@ -293,11 +294,21 @@ def main():
             res = open_dashboard_port() 
             print(f"{res}")
             continue
+
+        elif user_input == "/-":
+            print("\n[系統] 開啟所有儀表板...")
+            res_f = open_dashboard_fund() 
+            res_p = open_dashboard_port() 
+            print(f"{res_f}")
+            print(f"{res_p}")
+            continue
+
         elif user_input == "/pw":
             print("\n[系統] 產生隨機密碼...")
             res = open_dashboard_fund() 
             print(f"{res}")
             continue
+
         elif user_input == "/cls":
             os.system('cls')
             continue

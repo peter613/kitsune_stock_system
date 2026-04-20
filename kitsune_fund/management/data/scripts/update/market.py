@@ -254,8 +254,9 @@ def get_data(date_str):
 def update_market_data(specific_date=None):
     # 1. 統一狀態賦值：取得字串與 datetime 物件
     if specific_date:
-        # 手動指定日期 (格式: 'YYYY-MM-DD')
-        target_dt = datetime.strptime(specific_date, '%Y-%m-%d')
+        # 將可能存在的 '-' 移除，統一以 '%Y%m%d' 格式解析
+        clean_date = specific_date.replace('-', '')
+        target_dt = datetime.strptime(clean_date, '%Y%m%d')
         print(f"回補指定日期資料...")
     else:
         # 每日更新模式
