@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 from datetime import datetime
 import time
 import subprocess
@@ -29,16 +29,17 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
 # 匯入模組
-from kitsune_fund.management.data.scripts.update.market import update_market_data
-from kitsune_fund.management.data.scripts.update._00631 import update_00631
-from kitsune_fund.management.data.scripts.update._0050 import update_0050
-from kitsune_fund.management.data.scripts.update.revenue import update_revenue
-from kitsune_fund.management.core.prediction import prediction
-from kitsune_fund.management.core.bt_simulator import backtester
-from kitsune_fund.management.data.scripts.cleaning.train import create_training
-from kitsune_fund.management.data.scripts.cleaning.pred import create_prediction
-from kitsune_fund.management.core.create_cbm import create_cbm
-from kitsune_fund.management.journal.update_journal import update_journal
+from kitsune_quant.management.data.database.update_market import update_market_data
+from kitsune_quant.management.data.database.update_00631 import update_00631
+from kitsune_quant.management.data.database.update_0050 import update_0050
+from kitsune_quant.management.data.database.update_revenue import update_revenue
+from kitsune_quant.management.core.prediction import prediction
+from kitsune_quant.management.core.bt_simulator import backtester
+from kitsune_quant.management.data.cleaning.train import create_training
+from kitsune_quant.management.data.cleaning.pred import create_prediction
+from kitsune_quant.management.core.create_cbm import create_cbm
+from kitsune_quant.management.journal.update_journal import update_journal
+from kitsune_quant.administration.update_quant_ledger import update_quant_ledger
 
 # =================
 # 系統工具定義(指令)
@@ -58,9 +59,11 @@ def update_database(backfill_date: str = None) -> str:
     
     print('\n更新股市....')
     update_market_data(backfill_date)
-    
-    target_date = backfill_date if backfill_date else "今日"
-    return f"\n{target_date} 之資料庫已全面更新或回補完畢。"
+
+    print('\n更新基金帳務....')
+    update_quant_ledger()
+
+    return f"\n資料庫已全面更新完畢。"
 
 def open_dashboard_fund() -> str:
     """啟動 Streamlit fund 視覺化儀表板/戰情室/dashboard。"""
@@ -73,7 +76,7 @@ def open_dashboard_fund() -> str:
         f'start /D "{target_path}" cmd /k '
         f'"set PYTHONPATH=. && '
         f'venv\\Scripts\\activate && '
-        f'streamlit run {config.DASHBOARD_FUND_DIR}/app_fund.py"'
+        f'streamlit run {config.DASHBOARD_QUANT_DIR}/app_quant.py"'
     )
         
     subprocess.Popen(cmd, shell=True)

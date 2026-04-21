@@ -1,4 +1,4 @@
-import os
+﻿import os
 from click import group
 import pandas as pd
 import numpy as np
@@ -6,7 +6,7 @@ from talib import *
 from datetime import datetime
 import gc
 import config
-from kitsune_fund.management.data.scripts.cleaning.black_list import *
+from kitsune_quant.management.data.cleaning.black_list import *
 
 def create_training(version='v14', years_10=True, stock_filter=True):
     file_save_name = config.FEATURES_DIR / f'train_{version}.csv'

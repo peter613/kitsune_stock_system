@@ -5,8 +5,7 @@ Kitsune Kernel — 投資者入口
 """
 
 import streamlit as st
-from kitsune_fund.valuation.engine import load_data, calculate_daily_history
-from kitsune_fund.valuation.engine import load_subscribers
+from kitsune_portfolio.dashboard.engine_port import load_data, load_subscribers
 from pages_port import page_subscriber_nav, page_subscriber_performance
 
 st.set_page_config(page_title="Kitsune Portfolio", layout="wide")
@@ -63,8 +62,7 @@ def main():
     with loading.container():
         st.write("🦊 請稍候...")
 
-    df_record, df_flows, df_price, df_0050, df_00631L = load_data()
-    df_history = calculate_daily_history(df_record, df_flows, df_price, df_0050, df_00631L)
+    df_history, df_flows = load_data()
     loading.empty()
 
     subscribers = load_subscribers(df_flows)

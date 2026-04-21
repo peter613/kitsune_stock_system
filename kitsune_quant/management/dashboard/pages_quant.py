@@ -1,4 +1,4 @@
-"""
+﻿"""
 pages.py
 Kitsune Kernel — 頁面渲染層
 職責：接收計算結果，負責所有 Streamlit / Plotly 渲染
@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
-from kitsune_fund.valuation.engine import calculate_settlement_data
+from kitsune_quant.management.dashboard.engine_quant import calculate_settlement_data
 
 # ══════════════════════════════════════════
 # 初始化繪圖格式
@@ -140,7 +140,7 @@ def page_fund_nav(df_history):
     col1, col2, col3 = st.columns(3)
     col1.metric("當前淨值", f"${current_nav:,.2f}")
     col2.metric("平均淨值",      f"${avg_nav:,.2f}")
-    col3.metric("距離高點",        f"{distance_high:.2f}%")
+    col3.metric("距離高點",        f"{np.abs(distance_high):.2f}%")
 
     today = df_history['date'].max()
     cutoffs = {
@@ -189,7 +189,7 @@ def page_fund_nav(df_history):
             marker=dict(size=12, color="#FF0000", symbol='triangle-up'),
             text=[f"MAX: {max_nav:,.2f}"],
             textfont=dict(size=12, color="#FF0000"),
-            textposition="top center",
+            textposition="top left",
             showlegend=False,
             hoverinfo='skip',
             visible=(i == 0)

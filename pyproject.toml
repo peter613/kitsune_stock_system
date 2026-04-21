@@ -1,4 +1,4 @@
-#更新打pip install -e .
+﻿#更新打pip install -e .
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
@@ -29,5 +29,5 @@ dependencies = [
 
 [tool.setuptools]
 # 這裡就是架構師的明確授權：定義範圍
-packages = ['kitsune_fund','kitsune_portfolio']#資料夾
+packages = ['kitsune_quant','kitsune_portfolio']#資料夾
 py-modules = ["config"]#檔案

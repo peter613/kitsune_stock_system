@@ -1,10 +1,10 @@
-import os
+﻿import os
 import pandas as pd
 import numpy as np
 from talib import *
 import gc
 import config
-from kitsune_fund.management.data.scripts.cleaning.black_list import *
+from kitsune_quant.management.data.cleaning.black_list import *
 # --- 設定區 ---
 def create_prediction(stock_filter=True):
     # 1. 檔案路徑更新
