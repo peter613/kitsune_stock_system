@@ -20,6 +20,7 @@ def _plotly_base(y_name: str) -> dict:
         hovermode="x",
         xaxis=dict(
             type='date', tickformat="%Y/%m/%d",
+            rangebreaks=[dict(bounds=["sat", "mon"])],
             showspikes=True,
             spikecolor="rgba(150,150,150,0.8)",
             spikethickness=1, spikedash="solid",

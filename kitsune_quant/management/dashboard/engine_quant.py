@@ -29,8 +29,8 @@ import config
 # ──────────────────────────────────────────
 @st.cache_data
 def load_data():
-    file_path_journal     = config.JOURNAL_DIR / "journal.csv"
-    file_path_transaction = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction.csv"
+    file_path_journal     = config.JOURNAL_DIR / "journal_quant.csv"
+    file_path_transaction = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
 
     # ── 股票交易紀錄（journal.csv）──
     df_record = pd.read_csv(file_path_journal, dtype={'id': str})
@@ -69,7 +69,7 @@ def load_data():
         market_ids = set(df_price['id'].unique())
         orphan_ids = record_ids - market_ids
         if orphan_ids:
-            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal.csv。")
+            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal_quant.csv。")
 
     _validate_ids(df_record, df_price)
 
@@ -161,7 +161,7 @@ def calculate_settlement_data(df_record, df_price):
         if shares_sold > 0 and last_sell_date is not None:
             realized_data.append({
                 "日期":       last_sell_date.strftime("%Y-%m-%d"),
-                "代號":       yahoo_url,
+                "代號":       aid,#若未來要超連結改成:yahoo_url,
                 "名稱":       stock_name,
                 "累積報酬率": f"{(total_r_pnl / total_sell_cost) * 100:.1f}%" if total_sell_cost > 0 else "0%",
                 "已實現損益": round(total_r_pnl, 0),
@@ -174,7 +174,7 @@ def calculate_settlement_data(df_record, df_price):
             est_sell_fee = int(mv * 0.001425) + int(mv * tax_rate)
             u_pnl        = mv - total_cost - est_sell_fee
             unrealized_data.append({
-                "代號":       yahoo_url,
+                "代號":       aid,#若未來要超連結改成:yahoo_url,
                 "名稱":       stock_name,
                 "累積報酬率": f"{(u_pnl / total_cost) * 100:.1f}%" if total_cost > 0 else "0%",
                 "未實現損益": round(u_pnl, 0),
@@ -255,10 +255,12 @@ def _check_bear_market_alerts(df_0050, threshold=-0.20):
 def generate_system_alerts(df_record, df_price, df_0050, unrealized_data):
     """
     統一收集並回傳所有風控警報。
-    排列順序：總體經濟（大盤）-> 個體經濟（持股）
     """
     alerts = []
     alerts.extend(_check_bear_market_alerts(df_0050))
     alerts.extend(_check_stoploss_alerts(unrealized_data))
-    alerts.extend(_check_rebalance_alerts(df_record, df_price))
+
+    #暫且不比例獲利平衡(心理作用，回測無增加績效)
+    #alerts.extend(_check_rebalance_alerts(df_record, df_price))
+    
     return alerts

@@ -126,10 +126,6 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
-    BALANCE_HIGH     = 0.25    # 再平衡上限：單股超過 25% 時修剪
-    BALANCE_TARGET   = 0.20    # 修剪至 20%
-    VOL_FILTER_ON    = False   # 大盤波動砍半倉開關（True = 啟用）
-    VOL_THRESHOLD    = 0.30    # 波動率閾值（年化，僅 VOL_FILTER_ON=True 時生效）
     TRUST_ON         = False   # 是否啟用投信過濾（True = 剔除投信買賣超近 20 日完全為 0 的標的）
 
     rank_str = ','.join(map(str, select_rank))
@@ -162,24 +158,6 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
     # 記錄原始 return_20d（標籤），回測結果另存 simulated_return
     test_df['simulated_return'] = np.nan
 
-    # ── 3. 大盤波動率序列 ──────────────────────────────
-    print("初始化大盤波動率雷達 (0050.TW)...")
-    vol_series = pd.Series(dtype=float)
-    if VOL_FILTER_ON:
-        try:
-            raw = yf.download('0050.TW', start='2020-01-01', progress=False)
-            if isinstance(raw.columns, pd.MultiIndex):
-                close = raw['Close'].iloc[:, 0]
-            else:
-                close = raw['Close']
-            close.index = pd.to_datetime(close.index).tz_localize(None)
-            vol_series = close.pct_change().rolling(20).std() * (252 ** 0.5)
-            vol_series = vol_series.dropna()
-        except Exception as e:
-            print(f"波動率模組失效: {e}")
-    else:
-        pass
-
     # ── 4. 市場日頻資料 ──────────────────────────────
     market_df = pd.read_parquet(config.DATABASE_DIR / "market.parquet")
     market_df['date'] = pd.to_datetime(market_df['date'])
@@ -196,8 +174,6 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
     capital         = float(INITIAL_CAPITAL)
     monthly_results = []
 
-    vol_cut_count       = 0
-    total_rebalance_cnt = 0
     stop_loss_count     = 0
 
     print("進入單位淨值法回測迴圈 (日監控模式)...")
@@ -221,7 +197,6 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
         cash_pool = 0.0
 
         portfolio = {}
-        has_scaled_down = False
 
         for idx in top_picks.index:
             s_id = str(test_df.loc[idx, 'id']).replace('.0', '')
@@ -255,33 +230,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
                     today_date = p['dates'][d_idx]
                     break
 
-            # 【日檢查 1】大盤波動砍半倉
-            if (VOL_FILTER_ON 
-                and today_date is not None
-                and not has_scaled_down
-                and len(vol_series) > 0
-                ):
-                check_ts = pd.to_datetime(today_date).tz_localize(None)
-                try:
-                    cur_vol = vol_series.asof(check_ts)
-                    if pd.notna(cur_vol) and cur_vol > VOL_THRESHOLD:
-                        has_scaled_down = True
-                        vol_cut_count += 1
-                        print(f"  [VOL ALERT] {check_ts.date()} 波動 {cur_vol:.2f} → 砍半倉")
-                        for _idx, p in portfolio.items():
-                            if p['alive'] and d_idx < len(p['prices']):
-                                cur_p      = p['prices'][d_idx]
-                                sell_sh    = p['shares'] * 0.5
-                                sell_val   = sell_sh * cur_p
-                                fee        = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                net_proc   = sell_val - fee
-                                cash_pool     += net_proc
-                                p['own_cash'] += net_proc   # 各股砍倉現金各自歸屬
-                                p['shares']   -= sell_sh
-                except Exception as e:
-                    print(f"  波動率砍倉異常: {e}")
-
-            # 【日檢查 2】個股停損
+            # 【日檢查 1】個股停損
             for idx, p in portfolio.items():
                 if p['alive'] and d_idx < len(p['prices']):
                     cur_p = p['prices'][d_idx]
@@ -294,34 +243,6 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
                         p['shares']   = 0.0
                         p['alive']    = False
                         stop_loss_count += 1
-
-            # 【日檢查 3】計算活倉總值（不含現金池）
-            stock_vals = {}
-            day_stock_total = 0.0
-            for idx, p in portfolio.items():
-                if p['alive'] and d_idx < len(p['prices']):
-                    v = p['shares'] * p['prices'][d_idx]
-                    stock_vals[idx] = v
-                    day_stock_total += v
-
-            if day_stock_total <= 0:
-                continue
-
-            # 【日檢查 4】再平衡：單股超過 BALANCE_HIGH
-            # 現金池也納入總資產計算（現金不參與權重再平衡）
-            day_total_assets = day_stock_total + cash_pool
-
-            for idx, v in stock_vals.items():
-                weight = v / day_total_assets
-                if weight > BALANCE_HIGH:
-                    target_v   = BALANCE_TARGET * day_total_assets
-                    trim_val   = v - target_v
-                    fee        = _calc_tx_cost(trim_val, TRANSACTION_COST)
-                    net_trim   = trim_val - fee
-                    cash_pool += net_trim
-                    portfolio[idx]['own_cash'] += net_trim   # 再平衡現金歸屬該股
-                    portfolio[idx]['shares']   -= trim_val / portfolio[idx]['prices'][d_idx]
-                    total_rebalance_cnt += 1
 
         # ── 月底結算：純 NAV 比率法 ──────────────────────
         # 期末股票總市值（使用每檔最後一筆有效價格）
@@ -399,11 +320,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
     print(f"最大回撤:     {max_dd*100:>10.2f}%")
     print("-" * 80)
     print(f"月數:              {total_months}")
-    print(f"總再平衡次數:      {total_rebalance_cnt}")
-    print(f"平均每月再平衡:    {total_rebalance_cnt / max(total_months,1):.2f} 次")
     print(f"20%停損次數:       {stop_loss_count} 次")
-    # print(f"波動砍倉觸發:      {vol_cut_count} / {total_months} 個月  "
-    #       f"({vol_cut_count/max(total_months,1)*100:.1f}%)")
     print("=" * 80)
 
     # ──────────────────────────────────────────────
@@ -537,4 +454,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
 
 
 if __name__ == "__main__":
-    backtester(version='v19', select_rank=list(range(1,6)), benchmark='00631L.TW')
+    backtester(version='v20', select_rank=list(range(1,6)), benchmark='00631L.TW')

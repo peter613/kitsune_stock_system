@@ -7,6 +7,7 @@ from datetime import datetime
 import gc
 import config
 from kitsune_quant.management.data.cleaning.black_list import *
+from scipy.stats import entropy
 
 def create_training(version='v14', years_10=True, stock_filter=True):
     file_save_name = config.FEATURES_DIR / f'train_{version}.csv'
@@ -70,64 +71,82 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     # 4. 特徵工程核心 (compute_features)
     # ---------------------------------------------------------
     def compute_features(group):
-        close = group['close'].values.astype(float)
-        high = group['high'].values.astype(float)
-        low = group['low'].values.astype(float)
-        volume = group['volume'].values.astype(float)
-        
-        # 使用 log1p 防止零成交額錯誤
-        amount_ln = np.log1p(group['amount'].values.astype(float))
+        close      = group['close'].values.astype(float)
+        high       = group['high'].values.astype(float)
+        low        = group['low'].values.astype(float)
+        volume     = group['volume'].values.astype(float)
+        amount     = group['amount'].values.astype(float)
+        trust_net  = group['Trust_Net'].values.astype(float)
+        foreign_net= group['Foreign_Net'].values.astype(float)
 
-        group['sma240'] = close / (SMA(close, timeperiod=240) + 1e-9)
-        #group['sma60']  = close / (SMA(close, timeperiod=60) + 1e-9)
-        group['sma20']  = close / (SMA(close, timeperiod=20) + 1e-9)
-        #group['sma10']  = close / (SMA(close, timeperiod=10) + 1e-9)
+        amount_ln  = np.log1p(amount)
+
+        # ── 均線 ──────────────────────────────────────────────
+        sma240 = close / (SMA(close, timeperiod=240) + 1e-9)
+        sma20  = close / (SMA(close, timeperiod=20)  + 1e-9)
 
         try:
-            group['kama'] = close / (KAMA(close, timeperiod=30) + 1e-9)
-        except:
-            group['kama'] = np.nan
+            kama = close / (KAMA(close, timeperiod=30) + 1e-9)
+        except Exception:
+            kama = np.full(len(close), np.nan)
 
-        group['adx'] = ADX(high, low, close, timeperiod=14)
-        
-        # macd, _, macd_hist = MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-        # group['macd_hist'] = macd_hist / (close + 1e-9)
-        group['atr'] = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
-        
-        # 成交量
-        group['amount20'] =  SMA(amount_ln, 20)
-        group['amount60'] =  SMA(amount_ln, 60)
+        # ── 技術指標 ──────────────────────────────────────────
+        adx = ADX(high, low, close, timeperiod=14)
+        atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
 
-        #突破
-        group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)
-        #group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
-        group['breakout_240'] = close / (MAX(high, timeperiod=240) + 1e-9)
+        # ── 成交值均線 ────────────────────────────────────────
+        amount20 = SMA(amount_ln, 20)
+        amount60 = SMA(amount_ln, 60)
 
-        #築底
-        group['support_20'] = MAX(low, timeperiod=20) / (close + 1e-9)
-        #group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
-        group['support_240'] = MAX(low, timeperiod=240) / (close + 1e-9)
+        # ── 突破 / 支撐 ───────────────────────────────────────
+        breakout_20  = close / (MAX(high, timeperiod=20)  + 1e-9)
+        breakout_240 = close / (MAX(high, timeperiod=240) + 1e-9)
+        support_20   = MAX(low, timeperiod=20)  / (close + 1e-9)
+        support_240  = MAX(low, timeperiod=240) / (close + 1e-9)
 
-        vol_5 = SMA(volume, 5) * 5 + 1  # 加 1 避免分母為零
-        t_net_5 = SMA(group['Trust_Net'].values.astype(float), 5) * 5
-        f_net_5 = SMA(group['Foreign_Net'].values.astype(float), 5) * 5
-        #投信方向盤 (保留正負號，判斷是作帳還是結帳)
-        group['trust_in_5'] = t_net_5 / vol_5
-        group['foreign_in_5'] = f_net_5 / vol_5
-        group['t_f_sync'] = group['trust_in_5'] * group['foreign_in_5']
-        
+        # ── 法人籌碼 ──────────────────────────────────────────
+        vol_5   = SMA(volume, 5) * 5 + 1
+        t_net_5 = SMA(trust_net,   5) * 5
+        f_net_5 = SMA(foreign_net, 5) * 5
+
+        trust_in_5   = t_net_5 / vol_5
+        foreign_in_5 = f_net_5 / vol_5
+        t_f_sync     = trust_in_5 * foreign_in_5
+
+        # ── 趨勢相關 ──────────────────────────────────────────
         time_idx = np.arange(len(close), dtype=float)
-        r_20 = CORREL(close, time_idx, timeperiod=20)
-        # group['r2_20'] = np.sign(r_20)* (r_20** 2)
-        # group['r_20'] = r_20
-        group['r_20_abs'] = np.abs(r_20)
+        r_20     = CORREL(close, time_idx, timeperiod=20)
+        r_20_abs = np.abs(r_20)
 
-        # upper, middle, lower = BBANDS(close, timeperiod=20)
-        # group['bb_width'] = (upper - lower) / (middle + 1e-9)
+        # ── 標籤 ──────────────────────────────────────────────
+        close_shifted = np.empty(len(close))
+        close_shifted[:-20] = close[20:]
+        close_shifted[-20:] = np.nan
+        return_20d = (close_shifted / (close + 1e-9)) - 1
 
-        # Label: 20日後報酬率 (Ranker 訓練目標)
-        group['return_20d'] = (group['close'].shift(-20) / (group['close'] + 1e-9)) - 1
-        
+        # ── 一次性寫回 DataFrame ──────────────────────────────
+        group = group.copy()          # 避免 SettingWithCopyWarning
+        cols = {
+            'sma240'      : sma240,
+            'sma20'       : sma20,
+            'kama'        : kama,
+            'adx'         : adx,
+            'atr'         : atr,
+            'amount20'    : amount20,
+            'amount60'    : amount60,
+            'breakout_20' : breakout_20,
+            'breakout_240': breakout_240,
+            'support_20'  : support_20,
+            'support_240' : support_240,
+            'trust_in_5'  : trust_in_5,
+            'foreign_in_5': foreign_in_5,
+            't_f_sync'    : t_f_sync,
+            'r_20_abs'    : r_20_abs,
+            'return_20d'  : return_20d,
+        }
+        for col, arr in cols.items():
+            group[col] = arr
+
         return group
 
     print("開始計算技術指標特徵...")
@@ -201,4 +220,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"樣本總數: {len(final_df)} | 最新日期: {final_df['date'].max().date()}")
 
 if __name__ == "__main__":
-    create_training(version='v19', years_10=True, stock_filter=True)
+    create_training(version='v20', years_10=True, stock_filter=True)

@@ -4,10 +4,9 @@ Kitsune Kernel — 投資者入口引擎
 職責：NAV 歷史讀取、申購/贖回紀錄讀取、投資者持分計算
 供應：app_port.py
 
-transaction.csv 格式規範：
+transaction_quant.csv 格式規範：
   申購：      action=subscribe,    price=申購金額(TWD),  share=空白,       subscriber=PETER/LYNN
   贖回(股數)：action=redeem,       price=空白,           share=贖回單位數, subscriber=PETER/LYNN
-  贖回(金額)：action=redeem_cash,  price=贖回金額(TWD),  share=空白,       subscriber=PETER/LYNN
 """
 import pandas as pd
 import streamlit as st
@@ -18,12 +17,12 @@ import config
 # 模組 1：資料讀取
 # ──────────────────────────────────────────
 def _load_navpu(admin_dir) -> pd.DataFrame:
-    df = pd.read_csv(admin_dir / "quant_navpu.csv")
+    df = pd.read_csv(admin_dir / "navpu_quant.csv")
     df['date'] = pd.to_datetime(df['date']).dt.normalize()
     return df.sort_values('date').reset_index(drop=True)
 
 def _load_flows(admin_dir) -> pd.DataFrame:
-    df = pd.read_csv(admin_dir / "transaction.csv", dtype={'id': str})
+    df = pd.read_csv(admin_dir / "transaction_quant.csv", dtype={'id': str})
     df.columns = df.columns.str.strip().str.lower()
     df['date']  = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
     df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)

@@ -32,12 +32,7 @@ st.set_page_config(page_title="Kitsune Quant", layout="wide")
 _CSS = """
 <style>
 /* ── 留白修正 ── */
-[data-testid="stAppViewContainer"] {
-    padding-top: 0rem !important;
-}
-[data-testid="stMainBlockContainer"] {
-    padding-top: 3rem !important;
-}
+[data-testid="stAppViewBlockContainer"] { padding-top: 1.5rem !important; }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
@@ -45,7 +40,7 @@ _CSS = """
     color: #1a1a1a !important;
     font-size: 1.05rem !important;
 }
-/* ── 小狐狸基金置頂空白 ── */
+/* ── 左頁置頂空白 ── */
 [data-testid="stSidebarUserContent"] {
     margin-top: -50px !important;
 }
@@ -57,7 +52,7 @@ _CSS = """
 /* ── 標題 ── */
 .stApp h1 {
     font-size: 1.5rem !important;
-    padding-top: 1.5rem !important;
+    padding-top: 1.0rem !important;
     padding-bottom: 0.8rem !important;
     margin-top: 0rem !important;
     font-weight: 700 !important;
@@ -78,6 +73,7 @@ _CSS = """
 }
 
 /* ── Metric value（大數字，紅色）── */
+[data-testid="stMetricValue"],
 [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p {
     font-size: 2.2rem !important;
     font-weight: 700 !important;
@@ -85,7 +81,7 @@ _CSS = """
     padding-top: 0.3rem !important;
 }
 
-/* ── 一般 markdown 文字 ── */
+/* ── 一般 markdown 文字（排除 MetricValue 內的）── */
 [data-testid="stMarkdownContainer"] p {
     color: #1a1a1a !important;
     font-size: 1.2rem !important;
@@ -99,9 +95,8 @@ def alert(message):
     <div style="
         background-color: #1A2B4C;
         color: #ffffff;
-        padding: 15px 20px;
         border: none;
-        margin: 50px 20px 10px 0px;
+        margin: 15px 20px 15px 0px;
         font-weight: 500;
         font-size: 1.1rem;
         letter-spacing: 2px;
@@ -118,11 +113,11 @@ def alert(message):
 @st.cache_data
 def load_nav_history():
     """
-    讀取 quant_navpu.csv，補算 pages 需要的衍生欄位：
+    讀取 navpu_quant.csv，補算 pages 需要的衍生欄位：
     roi_total, roi_0050, roi_00631L, dd_pct, total_units, total_nav, cash
     """
     # ── 基金 NAV ──
-    df_nav = pd.read_csv(config.KITSUNE_QUANT_ADMINISTRATION_DIR / "quant_navpu.csv")
+    df_nav = pd.read_csv(config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv")
     df_nav['date'] = pd.to_datetime(df_nav['date']).dt.normalize()
     df_nav = df_nav.sort_values('date').reset_index(drop=True)
 
@@ -175,7 +170,7 @@ _PAGES = {
     " 基金概況": lambda h, r, p: page_fund_overview(h),
     " 淨值走勢": lambda h, r, p: page_fund_nav(h),
     " 基金報酬": lambda h, r, p: page_fund_return(h),
-    " 基金績效": lambda h, r, p: page_fund_quality(h),
+    " 基金品質": lambda h, r, p: page_fund_quality(h),
     " 資產配置": lambda h, r, p: page_allocation(h, r, p),
     " 交易紀錄": lambda h, r, p: page_history(r, p, r),
 }
@@ -205,7 +200,7 @@ def main():
     if msgs:
         for m in msgs:
             alert(m)
-
+    
     # 3. Sidebar 導覽
     with st.sidebar:
         st.markdown("""

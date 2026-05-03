@@ -39,7 +39,7 @@ from kitsune_quant.management.data.cleaning.train import create_training
 from kitsune_quant.management.data.cleaning.pred import create_prediction
 from kitsune_quant.management.core.create_cbm import create_cbm
 from kitsune_quant.management.journal.update_journal import update_journal
-from kitsune_quant.administration.update_quant_ledger import update_quant_ledger
+from kitsune_quant.administration.update_quant import update_quant
 
 # =================
 # 系統工具定義(指令)
@@ -61,7 +61,7 @@ def update_database(backfill_date: str = None) -> str:
     update_market_data(backfill_date)
 
     print('\n更新基金帳務....')
-    update_quant_ledger()
+    update_quant()
 
     return f"\n資料庫已全面更新完畢。"
 
@@ -70,7 +70,7 @@ def open_dashboard_fund() -> str:
     print("啟動基金儀表板...")
     # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
 
-    target_path = r"C:\Users\Lynn610\Documents\kitsune_stock_system"
+    target_path = r"C:\Users\Lynn610\Documents\_kitsune_stock_system"
 
     cmd = (
         f'start /D "{target_path}" cmd /k '
@@ -86,7 +86,7 @@ def open_dashboard_port() -> str:
     print("啟動投組儀表板...")
     # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
 
-    target_path = r"C:\Users\Lynn610\Documents\kitsune_stock_system"
+    target_path = r"C:\Users\Lynn610\Documents\_kitsune_stock_system"
 
     cmd = (
         f'start /D "{target_path}" cmd /k '
@@ -265,7 +265,7 @@ def main():
             print("""\n
     /db : 更新當日資料庫
     /db_YYYYMMDD : 回補指定日期資料庫\n  
-    /-f : 打開基金儀表板(經理人)             
+    /-q : 打開基金儀表板(經理人)             
     /-p : 打開投組儀表板(投資者)
     /-  : 打開所有儀表板\n
     /pw : 產生隨機密碼(避免手癢打開看盤軟體)\n
@@ -286,7 +286,7 @@ def main():
             print(f"{res}")
             continue
 
-        elif user_input == "/-f":
+        elif user_input == "/-q":
             print("\n[系統] 開啟經理人儀表板...")
             res = open_dashboard_fund() 
             print(f"{res}")

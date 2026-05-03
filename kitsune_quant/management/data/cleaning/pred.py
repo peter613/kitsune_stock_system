@@ -5,6 +5,8 @@ from talib import *
 import gc
 import config
 from kitsune_quant.management.data.cleaning.black_list import *
+from scipy.stats import entropy
+
 # --- 設定區 ---
 def create_prediction(stock_filter=True):
     # 1. 檔案路徑更新
@@ -104,6 +106,34 @@ def create_prediction(stock_filter=True):
         #group['r2_60'] = np.sign(r_60)* (r_60** 2)
         #group['r2_20'] = np.sign(r_20)* (r_20** 2)
         group['r_20_abs'] = np.abs(r_20)
+        
+        # ---------------------------------------------------------
+        # #混亂程度(entropy)
+        # ---------------------------------------------------------
+        # 1. 計算每日報酬率 (維持 Pandas Series 格式以便使用內建函數)
+        # 使用 close 計算，並將第一天的 NaN 補 0
+        ret = group['close'].pct_change().fillna(0)
+
+        # 2. 定義 7 個狀態區間的物理邊界 (Bins)
+        # 邊界：-無限, -7%, -3%, -1%, +1%, +3%, +7%, +無限
+        bins = [-np.inf, -0.07, -0.03, -0.01, 0.01, 0.03, 0.07, np.inf]
+
+        # 3. 向量化分箱 (取代 if-else)：瞬間將報酬率轉換為 0~6 的整數狀態代碼
+        state_codes = pd.cut(ret, bins=bins).cat.codes
+
+        # 4. 定義底層熵值運算邏輯
+        def calc_entropy(x):
+            # 濾除一開始滾動視窗不足產生的 -1 (NaN 的 code)
+            x_valid = x[x >= 0]
+            if len(x_valid) == 0:
+                return np.nan
+            # np.unique 直接算出 20 天內各個狀態出現的次數
+            _, counts = np.unique(x_valid, return_counts=True)
+            # 丟給 scipy 計算夏農熵 (預設底數為 e)
+            return entropy(counts)
+
+        # 5. 執行 20 日滾動運算 (raw=True 代表傳遞 NumPy array，運算速度最快)
+        group['entropy_20'] = state_codes.rolling(window=20).apply(calc_entropy, raw=True)
 
         #突破
         group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)

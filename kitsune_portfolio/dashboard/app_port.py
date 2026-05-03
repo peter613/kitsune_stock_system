@@ -12,36 +12,57 @@ st.set_page_config(page_title="Kitsune Portfolio", layout="wide")
 
 _CSS = """
 <style>
-[data-testid="stAppViewContainer"] { padding-top: 0rem !important; }
-[data-testid="stMainBlockContainer"] { padding-top: 3rem !important; }
+/* ── 留白修正 ── */
+[data-testid="stAppViewBlockContainer"] { padding-top: 1.5rem !important; }
+
+/* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background-color: #fcf5ed !important;
     color: #1a1a1a !important;
     font-size: 1.05rem !important;
 }
-[data-testid="stSidebarUserContent"] { margin-top: -50px !important; }
-[data-testid="stSidebar"] .stRadio label {
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
+/* ── 左頁置頂空白 ── */
+[data-testid="stSidebarUserContent"] {
+    margin-top: -50px !important;
 }
+/* ── 選單page間隔 ── */
+[data-testid="stSidebar"] .stRadio label {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+/* ── 標題 ── */
 .stApp h1 {
     font-size: 1.5rem !important;
-    padding-top: 1.5rem !important;
+    padding-top: 1.0rem !important;
     padding-bottom: 0.8rem !important;
+    margin-top: 0rem !important;
     font-weight: 700 !important;
     color: #1a1a1a !important;
 }
+.stApp h3 {
+    font-size: 1.2rem !important;
+    margin-top: -5px !important;
+    padding-bottom: 0.8rem !important;
+    font-weight: 400 !important;
+}
+
+/* ── Metric label（小字） ── */
 [data-testid="stMetricLabel"] {
     font-size: 1.2rem !important;
     font-weight: 800 !important;
     color: #333333 !important;
 }
+
+/* ── Metric value（大數字，紅色）── */
+[data-testid="stMetricValue"],
 [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p {
     font-size: 2.2rem !important;
     font-weight: 700 !important;
     color: #C0392B !important;
     padding-top: 0.3rem !important;
 }
+
+/* ── 一般 markdown 文字（排除 MetricValue 內的）── */
 [data-testid="stMarkdownContainer"] p {
     color: #1a1a1a !important;
     font-size: 1.2rem !important;
@@ -67,7 +88,7 @@ def main():
 
     subscribers = load_subscribers(df_flows)
     if not subscribers:
-        st.error("transaction.csv 中找不到任何認購者，請確認 subscriber 欄位。")
+        st.error("transaction_quant.csv 中找不到任何認購者，請確認 subscriber 欄位。")
         return
 
     with st.sidebar:

@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import config
 
-data_path = config.JOURNAL_DIR / "journal.csv"
+data_path = config.JOURNAL_DIR / "journal_quant.csv"
 
 def update_journal(id, name, action, label, price, share, date):
     # 1. 讀取舊資料 (加上檔案存在的防呆機制)

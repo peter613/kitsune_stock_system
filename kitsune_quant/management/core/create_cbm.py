@@ -60,7 +60,7 @@ def create_cbm(version=None):
         "kama", "adx",
         
         # 趨勢穩定度
-        'r_20_abs', #"r2_20",
+        'r_20_abs',
         
         # 流動性 (Log化)
         "amount20",
@@ -106,7 +106,7 @@ def create_cbm(version=None):
         depth=6,
         loss_function='YetiRank',
         eval_metric='NDCG:top=5',
-        # early_stopping_rounds=5000,
+        #early_stopping_rounds=5000,
         verbose=100,
         random_seed=42,
         custom_metric=['PrecisionAt:top=5'],
@@ -130,4 +130,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v19')
+    create_cbm(version='v20')

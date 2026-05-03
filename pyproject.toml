@@ -1,4 +1,3 @@
-﻿#更新打pip install -e .
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
@@ -6,7 +5,6 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kernel"
 version = "0.1.0"
-# 這是你的採購清單，執行 pip install -e . 時會自動安裝
 dependencies = [
     "pandas",
     "yfinance",
@@ -15,19 +13,19 @@ dependencies = [
     "streamlit",
     "shap",
     "selenium",
+    "scipy",
     "matplotlib",
     "requests",
     "urllib3",
-    "TA-Lib" ,
+    "TA-Lib",
     "seaborn",
     "lxml",
     "pyarrow",
     "google-genai",
-    "dotenv",
+    "python-dotenv",
     "html5lib"
 ]
 
 [tool.setuptools]
-# 這裡就是架構師的明確授權：定義範圍
-packages = ['kitsune_quant','kitsune_portfolio']#資料夾
-py-modules = ["config"]#檔案
+packages = ["kitsune_quant", "kitsune_portfolio"]
+py-modules = ["config"]

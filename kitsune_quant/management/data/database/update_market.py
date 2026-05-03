@@ -100,25 +100,25 @@ def chips_twse(date_str):
             
     try:
         dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
-        df_raw = dfs[0] 
-        
-        df = df_raw.iloc[:, [0, 1, 4, 10]].copy() 
-        df.columns = ['id', 'name', 'Foreign_Net','Trust_Net'] 
-        
-        df['id'] = df['id'].astype(str).str.strip()
-        df = df[~df['id'].str.startswith('00')]
-        df = df[df['id'].str.len() == 4]
-        
-        df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
-        df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
-
-        df['Foreign_Net']/=1000
-        df['Trust_Net']/=1000
-        return df
-    
     except Exception as e:
-        print(f"[解析錯誤] 無法取得/解析 HTML: {e}")
+        print(f"[解析錯誤] : {e}")
         return None
+    
+    df_raw = dfs[0] 
+    
+    df = df_raw.iloc[:, [0, 1, 4, 10]].copy() 
+    df.columns = ['id', 'name', 'Foreign_Net','Trust_Net'] 
+    
+    df['id'] = df['id'].astype(str).str.strip()
+    df = df[~df['id'].str.startswith('00')]
+    df = df[df['id'].str.len() == 4]
+    
+    df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
+    df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
+
+    df['Foreign_Net']/=1000
+    df['Trust_Net']/=1000
+    return df
 
 # ==========================================
 # 上櫃 (tpex)
@@ -140,7 +140,6 @@ def basic_tpex(date_str):
         return None
         
     df_raw = dfs[0] 
-    
     df = df_raw.iloc[:, [0, 1, 2, 4, 5, 6, 7,8]].copy() 
     df.columns = ['id', 'name', 'close','open','high','low','volume','amount'] 
     
@@ -171,9 +170,9 @@ def chips_tpex(date_str):
     try:
         dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
     except Exception as e:
-        print(f"無法解析 HTML 表格: {e}")
-        return None
-        
+        print(f"[解析錯誤] : {e}")
+        return None    
+    
     df_raw = dfs[0] 
     
     df = df_raw.iloc[:, [0, 1, 4, 13]].copy() 

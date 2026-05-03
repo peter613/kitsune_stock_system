@@ -23,6 +23,7 @@ def customize_plotly(y_name):
         yaxis=dict(tickformat=",.2f"),
         xaxis=dict(
             type='date', tickformat="%Y/%m/%d",
+            rangebreaks=[dict(bounds=["sat", "mon"])],
             showspikes=True,
             spikecolor="rgba(150,150,150,0.8)",
             spikethickness=1,
@@ -249,9 +250,9 @@ def page_fund_return(df_history):
     col3.metric("日勝率",          f"{win_rate:.1f}%")
 
     configs = [
-        {"col": "roi_total",  "name": "投資組合",      "color": "#4F247E", "width": 3.0},
-        {"col": "roi_0050",   "name": "大盤 (0050)",   "color": "#68CCFD", "width": 1.25},
-        {"col": "roi_00631L", "name": "正二 (00631L)", "color": "#AB86BC", "width": 1.25},
+        {"col": "roi_total",  "name": "投資組合",      "color": "#4F247E", "width": 3.5, "visible": True,         "dash": "solid"},
+        {"col": "roi_0050",   "name": "大盤 (0050)",   "color": "#7B7A7A", "width": 2, "visible": True,         "dash": "dash"},
+        {"col": "roi_00631L", "name": "正二 (00631L)", "color": "#B39DDB", "width": 2, "visible": "legendonly", "dash": "dash"},
     ]
     n = len(configs)
 
@@ -267,9 +268,10 @@ def page_fund_return(df_history):
                 y=y_rebased,
                 name=c['name'],
                 mode='lines',
-                line=dict(color=c['color'], width=c['width']),
-                showlegend=False,   # 圖例改用 annotation 手動畫
-                visible=(i == 0),
+                line=dict(color=c['color'], width=c['width'], dash=c['dash']),
+                showlegend=(i == 0),        # ← 只有第一組 period 顯示圖例
+                legendgroup=c['name'],      # ← 同名的 trace 綁在一起，點一下全開/關
+                visible=c['visible'] if i == 0 else False,
                 hovertemplate='%{y:.2f}%<extra></extra>'
             ))
 
@@ -296,8 +298,18 @@ def page_fund_return(df_history):
 
     fig.update_layout(
         **customize_plotly("報酬率 (%)"),
-        showlegend=False,
-        annotations=legend_annotations,
+        showlegend=True,            # ← 開啟
+        legend=dict(
+            orientation="h",        # 水平排列，放在上方
+            x=0.28,                 # 對齊你原本 annotation 的位置
+            y=1.08,
+            xanchor="left",
+            yanchor="bottom",
+            font=dict(size=13),
+            itemclick="toggle",          # 點擊切換單條
+            itemdoubleclick="toggleothers",  # 雙擊只顯示這條
+        ),
+        annotations=[],             # ← 移除手動圖例 annotation
         updatemenus=[{**UPDATEMENU_STYLE, "buttons": buttons}]
     )
     fig.update_xaxes(rangeslider=dict(visible=False), type="date")
@@ -468,7 +480,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"未實現損益 │ ${total_unrealized:,.0f}")
     if unrealized_data:
         df_un = pd.DataFrame(unrealized_data).sort_values("當前市值", ascending=False)
-        st.dataframe(df_un, use_container_width=True, hide_index=True, column_config=column_config_setting)
+        st.dataframe(df_un, use_container_width=True, hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
 
     st.markdown("---")
 
@@ -476,7 +488,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"已實現損益 │ ${total_realized:,.0f}")
     if realized_data:
         df_re = pd.DataFrame(realized_data)
-        st.dataframe(df_re, use_container_width=True, hide_index=True, column_config=column_config_setting)
+        st.dataframe(df_re, use_container_width=True, hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
 
     st.markdown("---")
 

@@ -44,7 +44,7 @@ def _sell_proceeds(price: float, share: float, stock_id: str) -> float:
 # ──────────────────────────────────────────
 def _load_raw_data():
     # journal.csv
-    df_record = pd.read_csv(config.JOURNAL_DIR / "journal.csv", dtype={'id': str})
+    df_record = pd.read_csv(config.JOURNAL_DIR / "journal_quant.csv", dtype={'id': str})
     df_record.columns  = df_record.columns.str.strip().str.lower()
     df_record['date']  = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
     df_record = df_record[df_record['date'] >= START_DATE].copy()
@@ -52,7 +52,7 @@ def _load_raw_data():
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
 
     # transaction.csv
-    transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction.csv"
+    transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
     df_flows = pd.read_csv(transaction_path)
     df_flows.columns = df_flows.columns.str.strip().str.lower()
     df_flows['date']  = pd.to_datetime(df_flows['date'], errors='coerce').dt.normalize()
@@ -199,7 +199,7 @@ def _backfill_transaction(df_flows, df_nav, transaction_path):
 # ──────────────────────────────────────────
 # 主流程
 # ──────────────────────────────────────────
-def update_quant_ledger():
+def update_quant():
     print(f"開始更新基金帳本 ...")
 
     df_record, df_flows, df_price = _load_raw_data()
@@ -210,16 +210,16 @@ def update_quant_ledger():
         return
 
     # 輸出 1：quant_navpu.csv
-    nav_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "quant_navpu.csv"
+    nav_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv"
     nav_path.parent.mkdir(parents=True, exist_ok=True)
     df_nav.to_csv(nav_path, index=False)
-    print(f"quant_navpu.csv：共 {len(df_nav)} 筆，最新日期 {df_nav['date'].max().date()}，"
+    print(f"navpu_quant.csv：共 {len(df_nav)} 筆，最新日期 {df_nav['date'].max().date()}，"
           f"最新 NAV {df_nav['nav_per_unit'].iloc[-1]:.4f}")
 
     # 輸出 2：回填 transaction.csv
-    transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction.csv"
+    transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
     _backfill_transaction(df_flows, df_nav, transaction_path)
 
 
 if __name__ == '__main__':
-    update_quant_ledger()
+    update_quant()
