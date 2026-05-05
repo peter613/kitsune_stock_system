@@ -64,7 +64,7 @@ def update_00631(specific_date="2025-01-01"):
         
         current_price = df['close'].iloc[-1]
         print(f"正二資料庫同步成功! 現價: {current_price}")
-        print(df.tail(3))
+        print(df.tail(2))
     else:
         print("無法取得價格 (可能非開盤日)。")
 

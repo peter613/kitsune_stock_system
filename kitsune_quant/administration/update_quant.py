@@ -179,7 +179,7 @@ def _backfill_transaction(df_flows, df_nav, transaction_path):
 
         nav_pu = df_nav_lookup.get(row['date'])
         if nav_pu is None or nav_pu == 0:
-            print(f"警告：{row['date'].date()} 找不到對應 nav_per_unit，略過。")
+            print(f"{row['date'].date()} 找不到對應 nav_per_unit，略過。")
             continue
 
         if share_empty:
@@ -200,7 +200,6 @@ def _backfill_transaction(df_flows, df_nav, transaction_path):
 # 主流程
 # ──────────────────────────────────────────
 def update_quant():
-    print(f"開始更新基金帳本 ...")
 
     df_record, df_flows, df_price = _load_raw_data()
     df_nav = _calculate_nav(df_record, df_flows, df_price)
@@ -213,8 +212,8 @@ def update_quant():
     nav_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv"
     nav_path.parent.mkdir(parents=True, exist_ok=True)
     df_nav.to_csv(nav_path, index=False)
-    print(f"navpu_quant.csv：共 {len(df_nav)} 筆，最新日期 {df_nav['date'].max().date()}，"
-          f"最新 NAV {df_nav['nav_per_unit'].iloc[-1]:.4f}")
+    print(f'基金帳務更新完成，目前總筆數 {len(df_nav)} 筆')
+    print(f"現淨值(NAV) {df_nav['nav_per_unit'].iloc[-1]:.4f}")
 
     # 輸出 2：回填 transaction.csv
     transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"

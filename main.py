@@ -33,6 +33,7 @@ from kitsune_quant.management.data.database.update_market import update_market_d
 from kitsune_quant.management.data.database.update_00631 import update_00631
 from kitsune_quant.management.data.database.update_0050 import update_0050
 from kitsune_quant.management.data.database.update_revenue import update_revenue
+from kitsune_quant.management.data.database.backup_database import backup
 from kitsune_quant.management.core.prediction import prediction
 from kitsune_quant.management.core.bt_simulator import backtester
 from kitsune_quant.management.data.cleaning.train import create_training
@@ -51,19 +52,19 @@ def update_database(backfill_date: str = None) -> str:
         today_weekday = datetime.now().weekday()
         if today_weekday >= 5:
             return "今日為週末（非交易日），自動跳過資料更新程序。"
-        print('\n執行每日更新...')
+        print('執行每日更新...')
         
-    print('\n更新大盤(正二/0050)....')
+    print('\n\n[1.] 更新大盤(正二/0050)')
     update_00631()
     update_0050()
     
-    print('\n更新股市....')
+    print('\n\n[2.] 更新股市')
     update_market_data(backfill_date)
 
-    print('\n更新基金帳務....')
+    print('\n\n[3.] 更新基金帳務')
     update_quant()
 
-    return f"\n資料庫已全面更新完畢。"
+    return f"\n\n資料庫已全面更新完畢。"
 
 def open_dashboard_fund() -> str:
     """啟動 Streamlit fund 視覺化儀表板/戰情室/dashboard。"""
@@ -108,9 +109,12 @@ def generate_random_password() -> str:
 # =================
 def train_model(version: str) -> str:
     """建立訓練特徵並訓練新版本的 CBM 模型。必須輸入版本號 (例如 v11)。"""
-    print(f"準備訓練版本: {version}")
-    print(f"營收爬蟲...")
+    print(f"[1.] 營收爬蟲...")
     update_revenue()
+    print(f"[2.] 每月備份至supabase雲端資料庫(market & revenue)")
+    backup()
+    print('='*30)
+    print(f"[3.] 準備訓練版本: {version}")
     create_training(version=version, years_10=True, stock_filter=True)
     create_cbm(version)
     return f"版本 {version} 特徵與模型訓練完成。"
@@ -275,32 +279,32 @@ def main():
             continue
 
         if user_input == "/db":
-            print("\n[系統] 更新資料庫...")
+            print("\n[更新資料庫]")
             res = update_database() # 直接呼叫函式
             print(f"{res}")
             continue
             
         elif user_input.startswith("/db_"):
             date_str = user_input.replace("/db_", "")
-            print(f"\n[系統] 回補資料庫，指定日期: {date_str}")
+            print(f"\n[回補資料庫，指定日期: {date_str}]")
             res = update_database(backfill_date=date_str)
             print(f"{res}")
             continue
 
         elif user_input == "/-q":
-            print("\n[系統] 開啟經理人儀表板...")
+            print("\n[開啟經理人儀表板]")
             res = open_dashboard_fund() 
             print(f"{res}")
             continue 
 
         elif user_input == "/-p":
-            print("\n[系統] 開啟投資者儀表板...")
+            print("\n[開啟投資者儀表板]")
             res = open_dashboard_port() 
             print(f"{res}")
             continue
 
         elif user_input == "/-":
-            print("\n[系統] 開啟所有儀表板...")
+            print("\n[開啟所有儀表板]")
             res_f = open_dashboard_fund() 
             res_p = open_dashboard_port() 
             print(f"{res_f}")
@@ -308,7 +312,7 @@ def main():
             continue
 
         elif user_input == "/pw":
-            print("\n[系統] 產生隨機密碼...")
+            print("\n[產生隨機密碼]")
             res = generate_random_password()
             print(f"{res}")
             continue

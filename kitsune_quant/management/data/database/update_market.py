@@ -333,12 +333,12 @@ def update_market_data(specific_date=None):
     df_final = df_final.sort_values(by=['date','id'], ascending=[True, True])
 
     # 4. 驗證與存檔
-    print('\n==================== [資料庫抽樣檢驗] ====================')
+    print('\n===================== [資料庫抽樣檢驗] =====================')
     print("[2330 台積電] 最新動態:")
     print(df_final[df_final['id'] == '2330'].tail(3).to_string(index=False))
     print('\n[5347 世界先進] 最新動態:')
     print(df_final[df_final['id'] == '5347'].tail(3).to_string(index=False))
-    print('==========================================================\n')
+    print('===========================================================\n')
 
     # 自動化模式判定：如果有指定 specific_date，為了方便批次處理，直接存檔不詢問
     if specific_date:

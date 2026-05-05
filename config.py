@@ -3,11 +3,6 @@
 BASE_DIR = Path(__file__).resolve().parent
 
 #=============================
-#benchmark
-#=============================
-KITSUNE_BENCHMARK_DIR = BASE_DIR / "benchmark_data"
-
-#=============================
 #kitsune_quant_management
 #=============================
 KITSUNE_QUANT_MANAGEMENT_DIR = BASE_DIR / "kitsune_quant" / "management"
@@ -17,7 +12,7 @@ CBM_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "cbm"
 
 # Data Paths
 LOOKUP_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "data" /"lookup"
-DATABASE_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "data" /"database"
+DATABASE_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "data" /"database" / "data"
 FEATURES_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "data" /"features"
 
 # Live Path

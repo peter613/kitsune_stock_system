@@ -23,7 +23,8 @@ dependencies = [
     "pyarrow",
     "google-genai",
     "python-dotenv",
-    "html5lib"
+    "html5lib",
+    "supabase"
 ]
 
 [tool.setuptools]
