@@ -13,7 +13,7 @@ st.set_page_config(page_title="Kitsune Portfolio", layout="wide")
 _CSS = """
 <style>
 /* ── 留白修正 ── */
-[data-testid="stAppViewBlockContainer"] { padding-top: 1.5rem !important; }
+[data-testid="[data-testid="stMainBlockContainer"] { padding-top: 2.0rem !important; }"] { padding-top: 1.5rem !important; }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {

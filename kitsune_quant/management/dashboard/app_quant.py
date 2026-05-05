@@ -32,7 +32,7 @@ st.set_page_config(page_title="Kitsune Quant", layout="wide")
 _CSS = """
 <style>
 /* ── 留白修正 ── */
-[data-testid="stAppViewBlockContainer"] { padding-top: 1.5rem !important; }
+[data-testid="stMainBlockContainer"] { padding-top: 2.0rem !important; }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {

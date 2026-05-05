@@ -76,7 +76,7 @@ def open_dashboard_fund() -> str:
         f'start /D "{target_path}" cmd /k '
         f'"set PYTHONPATH=. && '
         f'venv\\Scripts\\activate && '
-        f'streamlit run {config.DASHBOARD_QUANT_DIR}/app_quant.py"'
+        f'streamlit run {config.DASHBOARD_QUANT_DIR}/app_quant.py --server.port 8501"'
     )
         
     subprocess.Popen(cmd, shell=True)
@@ -92,7 +92,7 @@ def open_dashboard_port() -> str:
         f'start /D "{target_path}" cmd /k '
         f'"set PYTHONPATH=. && '
         f'venv\\Scripts\\activate && '
-        f'streamlit run {config.DASHBOARD_PORT_DIR}/app_port.py"'
+        f'streamlit run {config.DASHBOARD_PORT_DIR}/app_port.py --server.port 8502"'
     )
         
     subprocess.Popen(cmd, shell=True)
@@ -242,11 +242,12 @@ def main():
     * 寫入交易 : 若大量交易可上傳照片，複製cmd指令
     (https://gemini.google.com/gem/c33692536ab1/2befc6b47cb88b57)
             
-    [ 其他功能需輸入指令，輸入/help查看指令集 ]\n
+    [ 其他功能需輸入指令，輸入/help查看指令集 ]
     """)
     print(f"   ◆ 目前可用模型版本: {get_available_versions()}")
-    print("   ◆ 可用 Benchmark: 0050.TW & 00631L.TW\n\n")
+    print("   ◆ 可用 Benchmark: 0050.TW & 00631L.TW")
 
+    print("\n=======================================================================")
     # 初始化 AI 代理
     client, agent_config, chat = init_kitsune_agent()
   
@@ -308,7 +309,7 @@ def main():
 
         elif user_input == "/pw":
             print("\n[系統] 產生隨機密碼...")
-            res = open_dashboard_fund() 
+            res = generate_random_password()
             print(f"{res}")
             continue
 

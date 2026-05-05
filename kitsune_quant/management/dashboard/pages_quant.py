@@ -121,7 +121,7 @@ def page_fund_overview(df_history):
     fig1.update_layout(**customize_plotly(""))
     fig1.update_yaxes(title_text="規模 (TWD)", secondary_y=False)
     fig1.update_yaxes(title_text="單位數",     secondary_y=True, showgrid=False)
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, width='stretch')
 
 # ══════════════════════════════════════════
 # 頁面 2：淨值走勢
@@ -211,7 +211,7 @@ def page_fund_nav(df_history):
         updatemenus=[{**UPDATEMENU_STYLE, "buttons": buttons}]
     )
     fig.update_xaxes(rangeslider=dict(visible=False), type="date")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ══════════════════════════════════════════
 # 頁面 3：報酬
@@ -315,7 +315,7 @@ def page_fund_return(df_history):
     fig.update_xaxes(rangeslider=dict(visible=False), type="date")
     fig.add_hline(y=0, line_dash="dot", line_color="gray", line_width=1)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ══════════════════════════════════════════
 # 頁面 4：基金品質
@@ -369,7 +369,7 @@ def page_fund_quality(df_history):
     )
     fig1.update_layout(**customize_plotly("Rolling Sharpe (20日)"), showlegend=False)
     fig1.update_xaxes(rangeslider=dict(visible=False), type="date")
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, width='stretch')
 
     # ── 圖2：回撤面積圖 ──
     fig2 = go.Figure()
@@ -384,7 +384,7 @@ def page_fund_quality(df_history):
     ))
     fig2.update_layout(**customize_plotly("回撤 (%)"), showlegend=False)
     fig2.update_xaxes(rangeslider=dict(visible=False), type="date")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width='stretch')
 
 # ══════════════════════════════════════════
 # 頁面 5：狐狸基金資產配置
@@ -456,7 +456,7 @@ def page_allocation(df_history, df_record, df_price):
         height=500,
         margin=dict(t=10, l=10, r=10, b=10),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ══════════════════════════════════════════
 # 頁面 6：資產結算中心
@@ -480,7 +480,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"未實現損益 │ ${total_unrealized:,.0f}")
     if unrealized_data:
         df_un = pd.DataFrame(unrealized_data).sort_values("當前市值", ascending=False)
-        st.dataframe(df_un, use_container_width=True, hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
+        st.dataframe(df_un, width='stretch', hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
 
     st.markdown("---")
 
@@ -488,7 +488,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"已實現損益 │ ${total_realized:,.0f}")
     if realized_data:
         df_re = pd.DataFrame(realized_data)
-        st.dataframe(df_re, use_container_width=True, hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
+        st.dataframe(df_re, width='stretch', hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
 
     st.markdown("---")
 

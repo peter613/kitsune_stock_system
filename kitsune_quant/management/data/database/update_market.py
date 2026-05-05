@@ -112,6 +112,9 @@ def chips_twse(date_str):
     df['id'] = df['id'].astype(str).str.strip()
     df = df[~df['id'].str.startswith('00')]
     df = df[df['id'].str.len() == 4]
+
+    if df.empty:
+        return None
     
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
@@ -181,6 +184,9 @@ def chips_tpex(date_str):
     df['id'] = df['id'].astype(str).str.strip()
     df = df[~df['id'].str.startswith('00')]
     df = df[df['id'].str.len() == 4]
+
+    if df.empty:
+        return None
     
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)

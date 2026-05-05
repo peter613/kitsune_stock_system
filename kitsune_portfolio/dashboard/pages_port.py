@@ -139,7 +139,7 @@ def page_subscriber_nav(df_equity: pd.DataFrame, name: str):
     fig.add_hline(y=0, line_dash="dot", line_color="gray", line_width=1,
                   secondary_y=True)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     
     st.caption(
         f"當前 NAV：{nav:.4f}　｜　持有單位數：{units:,.4f}　｜　"
@@ -217,7 +217,7 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
     fig.update_yaxes(title_text="單月報酬率 (%)", tickformat=".2f",
                      ticksuffix="%", showgrid=False,                  secondary_y=True)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # ── 數字明細表 ────────────────────────────────────────
     df_table = df_year[['ym_str', 'equity', 'month_pnl', 'month_roi', 'roi']].copy()
@@ -228,4 +228,4 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
     df_table['單月報酬率(%)'] = df_table['單月報酬率(%)'].map('{:.2f}%'.format)
     df_table['累積報酬率(%)'] = df_table['累積報酬率(%)'].map('{:.2f}%'.format)
 
-    st.dataframe(df_table, use_container_width=True, hide_index=True)
+    st.dataframe(df_table, width='stretch', hide_index=True)
