@@ -13,7 +13,7 @@ st.set_page_config(page_title="Kitsune Portfolio", layout="wide")
 _CSS = """
 <style>
 /* ── 留白修正 ── */
-[data-testid="[data-testid="stMainBlockContainer"] { padding-top: 2.0rem !important; }"] { padding-top: 1.5rem !important; }
+[data-testid="stMainBlockContainer"] { padding-top: 2.0rem !important; }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
@@ -56,7 +56,7 @@ _CSS = """
 /* ── Metric value（大數字，紅色）── */
 [data-testid="stMetricValue"],
 [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p {
-    font-size: 2.2rem !important;
+    font-size: 1.8rem !important;
     font-weight: 700 !important;
     color: #C0392B !important;
     padding-top: 0.3rem !important;

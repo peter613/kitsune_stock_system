@@ -75,7 +75,7 @@ _CSS = """
 /* ── Metric value（大數字，紅色）── */
 [data-testid="stMetricValue"],
 [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p {
-    font-size: 2.2rem !important;
+    font-size: 2.0rem !important;
     font-weight: 700 !important;
     color: #C0392B !important;
     padding-top: 0.3rem !important;

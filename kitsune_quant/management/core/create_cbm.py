@@ -26,13 +26,13 @@ def plot_shap_values(model,test_pool,test_df,X_col,version):
     #繪圖: SHAP 柱狀圖
     print("繪製 SHAP 柱狀圖...")
     shap.plots.bar(shap_obj,max_display=15, show=False)
-    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_bar_v{version}.png')
+    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_bar_v{version}.png', bbox_inches='tight')
 
     # 繪圖: SHAP 蜂群圖
     print("繪製 SHAP 蜂群圖...")
     plt.figure() 
     shap.plots.beeswarm(shap_obj,max_display=15, show=False)
-    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_beeswarm_v{version}.png')
+    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_beeswarm_v{version}.png', bbox_inches='tight')
 
     plt.show()
 

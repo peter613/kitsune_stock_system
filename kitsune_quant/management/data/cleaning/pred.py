@@ -82,6 +82,7 @@ def create_prediction(stock_filter=True):
 
     # 特徵計算 V11 Sniper
     def compute_features(group):
+        n = len(group)
         close = group["close"].values.astype(float)
         high = group["high"].values.astype(float)
         low = group["low"].values.astype(float)
@@ -92,72 +93,57 @@ def create_prediction(stock_filter=True):
         vol_5 = SMA(volume, 5) * 5 + 1  # 加 1 避免分母為零
         t_net_5 = SMA(group['Trust_Net'].values.astype(float), 5) * 5
         f_net_5 = SMA(group['Foreign_Net'].values.astype(float), 5) * 5
-        #投信方向盤 (保留正負號，判斷是作帳還是結帳)
-        group['trust_in_5'] = t_net_5 / vol_5
-        group['foreign_in_5'] = f_net_5 / vol_5
-        group['t_f_sync'] = group['trust_in_5'] * group['foreign_in_5']
-
-        group["amount20"] = SMA(amount_ln, 20)
-        #group["amount60"] = SMA(amount_ln, 60)  # 同時用於流動性篩選與特徵
-
-        time_idx = np.arange(len(close), dtype=float)
-        #r_60 = CORREL(close, time_idx, timeperiod=60)
-        r_20 = CORREL(close, time_idx, timeperiod=20)
-        #group['r2_60'] = np.sign(r_60)* (r_60** 2)
-        #group['r2_20'] = np.sign(r_20)* (r_20** 2)
-        group['r_20_abs'] = np.abs(r_20)
         
-        # ---------------------------------------------------------
-        # #混亂程度(entropy)
-        # ---------------------------------------------------------
-        # 1. 計算每日報酬率 (維持 Pandas Series 格式以便使用內建函數)
-        # 使用 close 計算，並將第一天的 NaN 補 0
-        ret = group['close'].pct_change().fillna(0)
+        #投信方向盤 (保留正負號，判斷是作帳還是結帳)
+        trust_in_5 = t_net_5 / vol_5
+        foreign_in_5 = f_net_5 / vol_5
+        t_f_sync = trust_in_5 * foreign_in_5
 
-        # 2. 定義 7 個狀態區間的物理邊界 (Bins)
-        # 邊界：-無限, -7%, -3%, -1%, +1%, +3%, +7%, +無限
-        bins = [-np.inf, -0.07, -0.03, -0.01, 0.01, 0.03, 0.07, np.inf]
+        amount20 = SMA(amount_ln, 20)
 
-        # 3. 向量化分箱 (取代 if-else)：瞬間將報酬率轉換為 0~6 的整數狀態代碼
-        state_codes = pd.cut(ret, bins=bins).cat.codes
-
-        # 4. 定義底層熵值運算邏輯
-        def calc_entropy(x):
-            # 濾除一開始滾動視窗不足產生的 -1 (NaN 的 code)
-            x_valid = x[x >= 0]
-            if len(x_valid) == 0:
-                return np.nan
-            # np.unique 直接算出 20 天內各個狀態出現的次數
-            _, counts = np.unique(x_valid, return_counts=True)
-            # 丟給 scipy 計算夏農熵 (預設底數為 e)
-            return entropy(counts)
-
-        # 5. 執行 20 日滾動運算 (raw=True 代表傳遞 NumPy array，運算速度最快)
-        group['entropy_20'] = state_codes.rolling(window=20).apply(calc_entropy, raw=True)
+        time_idx = np.arange(n, dtype=float)
+        r_20 = CORREL(close, time_idx, timeperiod=20)
+        r_20_abs = np.abs(r_20)
 
         #突破
-        group['breakout_20'] = close / (MAX(high, timeperiod=20) + 1e-9)
-        #group['breakout_60'] = close / (MAX(high, timeperiod=60) + 1e-9)
-        group['breakout_240'] = close / (MAX(high, timeperiod=240) + 1e-9)
+        breakout_20 = close / (MAX(high, timeperiod=20) + 1e-9)
+        breakout_240 = close / (MAX(high, timeperiod=240) + 1e-9)
 
         #築底
-        group['support_20'] = MAX(low, timeperiod=20) / (close + 1e-9)
-        #group['support_60'] = MAX(low, timeperiod=60) / (close + 1e-9)
-        group['support_240'] = MAX(low, timeperiod=240) / (close + 1e-9)
+        support_20 = 1 - (MIN(low, timeperiod=20) / (close + 1e-9))
+        support_240 = 1 - (MIN(low, timeperiod=240) / (close + 1e-9))
 
-        group["sma240"] = close / (SMA(close, timeperiod=240) + 1e-9)
-        #group["sma60"] = close / (SMA(close, timeperiod=60) + 1e-9)
-        group["sma20"] = close / (SMA(close, timeperiod=20) + 1e-9)
-        #group["sma10"] = close / (SMA(close, timeperiod=10) + 1e-9)
+        sma240 = close / (SMA(close, timeperiod=240) + 1e-9)
+        sma20 = close / (SMA(close, timeperiod=20) + 1e-9)
 
-        group["adx"] = ADX(high, low, close, timeperiod=14)
+        adx = ADX(high, low, close, timeperiod=14)
         
         try:
-            group["kama"] = close / (KAMA(close, timeperiod=30) + 1e-9)
+            kama = close / (KAMA(close, timeperiod=30) + 1e-9)
         except:
-            group["kama"] = np.nan
+            kama = np.full(n, np.nan)
 
-        group["atr"] = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
+        #atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
+
+        # ── 字典一次性寫回 DataFrame ──────────────────────────────
+        group = group.copy()          # 避免 SettingWithCopyWarning
+        cols = {
+            'trust_in_5': trust_in_5,
+            'foreign_in_5': foreign_in_5,
+            't_f_sync': t_f_sync,
+            'amount20': amount20,
+            'r_20_abs': r_20_abs,
+            'breakout_20': breakout_20,
+            'breakout_240': breakout_240,
+            'support_20': support_20,
+            'support_240': support_240,
+            'sma240': sma240,
+            'sma20': sma20,
+            'adx': adx,
+            'kama': kama,
+        }
+        for col, arr in cols.items():
+            group[col] = arr
 
         return group
 

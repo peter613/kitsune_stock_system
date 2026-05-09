@@ -4,7 +4,7 @@ import time
 import subprocess
 import os
 import config
-
+from kitsune_quant.management.dashboard.engine_quant import load_data, calculate_settlement_data, generate_system_alerts
 """"
 未來投組比例，etf投組 : 量化投組 : 現金 = 60% : 30% : 10%
 etf投組， 00731(高息低波) : 00919 : 0056 = 3 : 1 : 1
@@ -108,7 +108,7 @@ def generate_random_password() -> str:
 # 系統工具定義(AI)
 # =================
 def train_model(version: str) -> str:
-    """建立訓練特徵並訓練新版本的 CBM 模型。必須輸入版本號 (例如 v11)。"""
+    """更新(CBM)模型。必須輸入版本號 (例如 v11)。"""
     print(f"[1.] 營收爬蟲...")
     update_revenue()
     print(f"[2.] 每月備份至supabase雲端資料庫(market & revenue)")
@@ -119,7 +119,7 @@ def train_model(version: str) -> str:
     create_cbm(version)
     return f"版本 {version} 特徵與模型訓練完成。"
 
-def run_prediction(version: str, update_features: bool = False) -> str:
+def run_prediction(version: str, update_features: bool = True) -> str:
     """執行特定版本模型的明日預測。預設update_features為True"""
     if update_features:
         print("更新預測特徵...")
@@ -168,7 +168,7 @@ def add_trade_record(stock_id: str, name: str, action: str, label: str, price: f
     
     # 直接呼叫你匯入的 update_journal
     result = update_journal(stock_id, name, action, label, price, share, date)
-    return result 
+    return result
 
 # ==========================================
 # 初始化 AI AGENT (新版 Client 架構)
@@ -188,6 +188,8 @@ def init_kitsune_agent():
     3167 大量: PCB/半導體設備商
     若不知道參數，請詢問管理員。
     請簡單扼要回答，不需過度冗長。
+    若使用者呼叫更新特徵並預測，執行run_prediction。
+    若使用者未提供版本，詢問使用者版本。
     """
     
     # 2. 定義系統行為設定 (Config)
@@ -210,6 +212,14 @@ def init_kitsune_agent():
     return client, agent_config, chat
 
 # ==========================================
+# 20%停損(第一頁)
+# ==========================================
+df_record, _, df_price, df_0050, _ = load_data()
+unrealized_data, _, _, _ = calculate_settlement_data(df_record, df_price)
+alerts = generate_system_alerts(df_record, df_price, df_0050, unrealized_data)
+os.system('cls')
+
+# ==========================================
 # 主程式 (終端機介面)
 # ==========================================
 def type_effect(text, delay=0.023, end_new_line=True):
@@ -230,10 +240,15 @@ def main():
     print('')
     type_effect("   >> INITIALIZING KITSUNE KERNEL...")
     time.sleep(0.3)
-    type_effect("   >> 自分の道を見つけるんだ")
+    if alerts:
+        type_effect('   >> [RISK CONTROL] : ALERT')
+        for msg in alerts:
+            type_effect(f'   >> {msg}')
+    else:
+        type_effect('   >> [RISK CONTROL] : SAFE')
     time.sleep(0.3)
-    type_effect("   >> WELCOME ", 0.05, end_new_line=False)
-    type_effect("   \033[1;94m[ ARCHITECT ]\033[0m", 0.05)
+    type_effect("   >> WELCOME ", 0.04, end_new_line=False)
+    type_effect("   [ ARCHITECT ]", 0.05)
     time.sleep(0.3)
     print('')
     
@@ -254,7 +269,7 @@ def main():
     print("\n=======================================================================")
     # 初始化 AI 代理
     client, agent_config, chat = init_kitsune_agent()
-  
+
     while True:
         user_input = input("\n請輸入>> ").strip()
         
@@ -290,26 +305,38 @@ def main():
             res = update_database(backfill_date=date_str)
             print(f"{res}")
             continue
-
-        elif user_input == "/-q":
-            print("\n[開啟經理人儀表板]")
-            res = open_dashboard_fund() 
-            print(f"{res}")
-            continue 
+        
+        elif user_input == "/-q" :
+            if datetime.now().weekday() < 5:
+                print('為平日，暫停打開儀表板喔')
+                continue
+            else:
+                print("\n[開啟經理人儀表板]")
+                res = open_dashboard_fund() 
+                print(f"{res}")
+                continue 
 
         elif user_input == "/-p":
-            print("\n[開啟投資者儀表板]")
-            res = open_dashboard_port() 
-            print(f"{res}")
-            continue
+            if datetime.now().weekday() < 5:
+                print('為平日，暫停打開儀表板喔')
+                continue
+            else:
+                print("\n[開啟投資者儀表板]")
+                res = open_dashboard_port() 
+                print(f"{res}")
+                continue
 
         elif user_input == "/-":
-            print("\n[開啟所有儀表板]")
-            res_f = open_dashboard_fund() 
-            res_p = open_dashboard_port() 
-            print(f"{res_f}")
-            print(f"{res_p}")
-            continue
+            if datetime.now().weekday() < 5:
+                print('為平日，暫停打開儀表板喔')
+                continue
+            else:
+                print("\n[開啟所有儀表板]")
+                res_f = open_dashboard_fund() 
+                res_p = open_dashboard_port() 
+                print(f"{res_f}")
+                print(f"{res_p}")
+                continue
 
         elif user_input == "/pw":
             print("\n[產生隨機密碼]")

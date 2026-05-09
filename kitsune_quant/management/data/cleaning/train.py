@@ -92,17 +92,18 @@ def create_training(version='v14', years_10=True, stock_filter=True):
 
         # ── 技術指標 ──────────────────────────────────────────
         adx = ADX(high, low, close, timeperiod=14)
-        atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
+        #atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
 
         # ── 成交值均線 ────────────────────────────────────────
         amount20 = SMA(amount_ln, 20)
-        amount60 = SMA(amount_ln, 60)
 
-        # ── 突破 / 支撐 ───────────────────────────────────────
-        breakout_20  = close / (MAX(high, timeperiod=20)  + 1e-9)
+        # ── 突破 / 支撐  (範圍 0~1)───────────────────────────────────────
+        # 突破 : 1代表在最高點
+        breakout_20 = close / (MAX(high, timeperiod=20) + 1e-9)
         breakout_240 = close / (MAX(high, timeperiod=240) + 1e-9)
-        support_20   = MAX(low, timeperiod=20)  / (close + 1e-9)
-        support_240  = MAX(low, timeperiod=240) / (close + 1e-9)
+        # 築底 : 1代表無窮遠離底部
+        support_20 = 1 - (MIN(low, timeperiod=20) / (close + 1e-9))
+        support_240 = 1 - (MIN(low, timeperiod=240) / (close + 1e-9))
 
         # ── 法人籌碼 ──────────────────────────────────────────
         vol_5   = SMA(volume, 5) * 5 + 1
@@ -131,15 +132,12 @@ def create_training(version='v14', years_10=True, stock_filter=True):
             'sma20'       : sma20,
             'kama'        : kama,
             'adx'         : adx,
-            'atr'         : atr,
             'amount20'    : amount20,
-            'amount60'    : amount60,
             'breakout_20' : breakout_20,
             'breakout_240': breakout_240,
             'support_20'  : support_20,
             'support_240' : support_240,
             'trust_in_5'  : trust_in_5,
-            'foreign_in_5': foreign_in_5,
             't_f_sync'    : t_f_sync,
             'r_20_abs'    : r_20_abs,
             'return_20d'  : return_20d,
@@ -220,4 +218,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"樣本總數: {len(final_df)} | 最新日期: {final_df['date'].max().date()}")
 
 if __name__ == "__main__":
-    create_training(version='v20', years_10=True, stock_filter=True)
+    create_training(version='v21', years_10=True, stock_filter=True)

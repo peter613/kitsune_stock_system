@@ -96,7 +96,7 @@ def page_fund_overview(df_history):
     aum = total_units*current_nav
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("當前淨值(NAV)", f"${current_nav:,.2f}")
+    col1.metric("成立時間", "2026-03-10")
     col2.metric("流通股數(UNITS)", f"{total_units:,.2f}")   
     col3.metric("資金規模(AUM)",   f"${aum:,.0f}")           
 
@@ -245,9 +245,8 @@ def page_fund_return(df_history):
 
     col1, col2, col3 = st.columns(3)
     col1.metric("累積報酬",        f"{roi_window:.2f}%")
-    col2.metric("超額報酬 (0050)", f"{alpha_0050:.2f}%",
-                help=f"正二超額報酬：{alpha_631L:.2f}%")
-    col3.metric("日勝率",          f"{win_rate:.1f}%")
+    col2.metric("超額報酬 (0050)", f"{alpha_0050:.2f}%")
+    col3.metric("超額報酬 (00631L)", f"{alpha_631L:.2f}%")
 
     configs = [
         {"col": "roi_total",  "name": "投資組合",      "color": "#4F247E", "width": 3.5, "visible": True,         "dash": "solid"},
@@ -480,7 +479,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"未實現損益 │ ${total_unrealized:,.0f}")
     if unrealized_data:
         df_un = pd.DataFrame(unrealized_data).sort_values("當前市值", ascending=False)
-        st.dataframe(df_un, width='stretch', hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
+        st.dataframe(df_un, width='stretch', hide_index=True,column_config=column_config_setting)
 
     st.markdown("---")
 
@@ -488,7 +487,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"已實現損益 │ ${total_realized:,.0f}")
     if realized_data:
         df_re = pd.DataFrame(realized_data)
-        st.dataframe(df_re, width='stretch', hide_index=True)  #若未來啟用超連結可以移除註釋column_config=column_config_setting)
+        st.dataframe(df_re, width='stretch', hide_index=True)#若需要超連結可省略註解,column_config=column_config_setting)
 
     st.markdown("---")
 

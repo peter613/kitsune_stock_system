@@ -23,7 +23,6 @@ import pandas as pd
 import streamlit as st
 import config
 
-
 # ──────────────────────────────────────────
 # 模組 1：資料讀取
 # ──────────────────────────────────────────
@@ -126,7 +125,7 @@ def calculate_settlement_data(df_record, df_price):
         sub        = df_trade[df_trade['id'] == aid].sort_values('date')
         stock_name = sub['name'].iloc[0] if 'name' in sub.columns else ""
         tax_rate   = _tax_rate(aid)
-        yahoo_url  = f"https://tw.stock.yahoo.com/quote/{aid}/institutional-trading"
+        yahoo_url  = f"https://tw.stock.yahoo.com/quote/{aid}/technical-analysis"
 
         cum_shares      = 0.0
         total_cost      = 0.0

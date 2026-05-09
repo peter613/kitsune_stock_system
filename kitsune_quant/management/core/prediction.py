@@ -5,6 +5,120 @@ import os
 from datetime import datetime
 import config
 
+def search_stock(stock_name: str, version='v20') -> str:
+    """
+    根據股票名稱查詢排名
+    例如: search_stock('台光電') 會告訴你他的排名和排名多少
+    """
+    # 1. 設定與載入
+    MODEL_FILE = config.CBM_DIR/f"strategy_{version}.cbm"
+    DATA_FILE = config.FEATURES_DIR/"pred.csv"
+    
+    if not os.path.exists(MODEL_FILE):
+        return f"❌ 錯誤：找不到模型檔案 {MODEL_FILE}"
+    
+    if not os.path.exists(DATA_FILE):
+        return f"❌ 錯誤：找不到資料檔案 {DATA_FILE}"
+    
+    model = CatBoostRanker()
+    model.load_model(MODEL_FILE)
+    feature_cols = model.feature_names_
+
+    # 2. 資料讀取
+    df = pd.read_csv(DATA_FILE)
+    df['date'] = pd.to_datetime(df['date'])
+    latest_date = df['date'].max()
+
+    target_df = df[df['date'] == latest_date].copy().reset_index(drop=True)
+    target_df = target_df.fillna(0)
+
+    # 3. 預測與排序
+    if target_df.empty:
+        return "❌ 錯誤：找不到最新日期的資料。"
+
+    missing_cols = [c for c in feature_cols if c not in target_df.columns]
+    if missing_cols:
+        return f"目前的 pred.csv 缺少模型 ({version}) 所需的特徵。"
+    
+    scores = model.predict(target_df[feature_cols])
+    target_df['predict_score'] = scores 
+    target_df = target_df.sort_values('predict_score', ascending=False).reset_index(drop=True)
+    target_df['rank'] = range(1, len(target_df) + 1)
+
+    # 4. 搜尋股票
+    # 搜尋名稱或代碼
+    search_result = target_df[
+        (target_df['name'].str.contains(stock_name, na=False)) | 
+        (target_df['id'].astype(str).str.contains(stock_name, na=False))
+    ]
+
+    if search_result.empty:
+        return f"❌ 找不到 '{stock_name}' 股票。請檢查股票名稱或代碼。"
+    
+    # 取得搜尋結果
+    result_row = search_result.iloc[0]
+    rank = int(result_row['rank'])
+    total_stocks = len(target_df)
+    stock_id = result_row['id']
+    stock_name_display = result_row['name']
+    score = result_row['predict_score']
+    
+    # 計算百分比排名
+    percentile = (1 - rank/total_stocks) * 100
+    
+    # 5. 特徵分析 - 找出強勢和弱勢特徵
+    analysis_df = target_df.copy()
+    valid_features = []
+    
+    for col in feature_cols:
+        if col in analysis_df.columns and pd.api.types.is_numeric_dtype(analysis_df[col]):
+            analysis_df[f"{col}_pct"] = analysis_df[col].rank(pct=True)
+            valid_features.append(col)
+    
+    # 取得查詢股票的特徵百分位
+    stock_result = analysis_df[analysis_df['rank'] == rank].iloc[0]
+    
+    strong_feats = []  # PR > 70%
+    weak_feats = []    # PR < 30%
+    
+    for feat in valid_features:
+        pct_val = stock_result[f"{feat}_pct"]
+        if pct_val > 0.7:
+            strong_feats.append((feat, pct_val * 100))
+        elif pct_val < 0.3:
+            weak_feats.append((feat, pct_val * 100))
+    
+    strong_feats = sorted(strong_feats, key=lambda x: x[1], reverse=True)
+    weak_feats = sorted(weak_feats, key=lambda x: x[1])
+    
+    # 構建分析報告
+    feature_analysis = ""
+    if strong_feats:
+        feature_analysis += "強勢特徵 (PR > 70%):\n"
+        for feat, pct in strong_feats[:5]:
+            feature_analysis += f"   • {feat}: {pct:.1f}%\n"
+    
+    if weak_feats:
+        feature_analysis += "弱勢特徵 (PR < 30%) - 排名靠後原因:\n"
+        for feat, pct in weak_feats[:5]:
+            feature_analysis += f"   • {feat}: {pct:.1f}%\n"
+    else:
+        feature_analysis += "沒有明顯弱勢特徵\n"
+    
+    result_str = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+股票代碼: {stock_id}
+股票名稱: {stock_name_display}
+預測得分: {score:.4f}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+排名: 第 {rank} 名（共 {total_stocks} 檔股票）
+排名百分位: 前 {(100-percentile):.1f}%
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{feature_analysis}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+    return result_str
+
+
 def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型別提示
     # 1. 設定與載入
     MODEL_FILE = config.CBM_DIR/f"strategy_{version}.cbm"
@@ -99,4 +213,5 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     return f"以下是選股結果與其在全市場的特徵百分位(PR)排名：{ai_analysis_data}"
 
 if __name__ == "__main__":
-    prediction(version='v17', select_ranks=[c for c in range(1,7)])
+    # print(search_stock('青雲', version='v20'))
+    prediction(version='v20', select_ranks=[c for c in range(1,6)])
