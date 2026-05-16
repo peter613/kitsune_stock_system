@@ -36,6 +36,7 @@ from kitsune_quant.management.data.database.update_revenue import update_revenue
 from kitsune_quant.management.data.database.backup_database import backup
 from kitsune_quant.management.core.prediction import prediction
 from kitsune_quant.management.core.bt_simulator import backtester
+from kitsune_quant.management.core.bt_analysis import bt_analysis
 from kitsune_quant.management.data.cleaning.train import create_training
 from kitsune_quant.management.data.cleaning.pred import create_prediction
 from kitsune_quant.management.core.create_cbm import create_cbm
@@ -65,6 +66,13 @@ def update_database(backfill_date: str = None) -> str:
     update_quant()
 
     return f"\n\n資料庫已全面更新完畢。"
+
+def update_rev_database() -> str:
+    print(f"[1.] 營收爬蟲...")
+    update_revenue()
+    print(f"[2.] 每月備份至supabase雲端資料庫(market & revenue)")
+    backup()
+    return f"\n\n營收資料庫已全面更新完畢。"
 
 def open_dashboard_fund() -> str:
     """啟動 Streamlit fund 視覺化儀表板/戰情室/dashboard。"""
@@ -109,12 +117,7 @@ def generate_random_password() -> str:
 # =================
 def train_model(version: str) -> str:
     """更新(CBM)模型。必須輸入版本號 (例如 v11)。"""
-    print(f"[1.] 營收爬蟲...")
-    update_revenue()
-    print(f"[2.] 每月備份至supabase雲端資料庫(market & revenue)")
-    backup()
-    print('='*30)
-    print(f"[3.] 準備訓練版本: {version}")
+    print(f"準備訓練版本: {version}")
     create_training(version=version, years_10=True, stock_filter=True)
     create_cbm(version)
     return f"版本 {version} 特徵與模型訓練完成。"
@@ -143,6 +146,8 @@ def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
     select_rank = [1, 2, 3, 4, 5]
     print(f"啟動 {version} 回測 (對照: {benchmark}, 範圍: Rank 1~5)...")
     backtester(version=version, benchmark=benchmark, select_rank=select_rank)
+    bt_analysis(version=version, top_n=5)
+    
     return f"版本 {version} 回測執行完畢，績效報告已產出。"
 
 def add_trade_record(stock_id: str, name: str, action: str, label: str, price: float, share: float, date: str = None) -> str:
@@ -152,7 +157,7 @@ def add_trade_record(stock_id: str, name: str, action: str, label: str, price: f
     【自動化邏輯】：
     1. 股票：買入則 action='buy'，賣出則 action='sell'；label 預設為 'ai'。
     2. 現金：入金則 action='in'，出金則 action='out'；stock_id='cash'，name='現金'，label='cash'。
-    3. 日期：若使用者未提及日期，date 參數請傳入 None。
+    3. **[必須遵守]若使用者未提及日期，date 參數傳入 None。**
     
     參數說明：
     stock_id: 股票代碼 (如 '2330') 或 'cash'
@@ -161,9 +166,9 @@ def add_trade_record(stock_id: str, name: str, action: str, label: str, price: f
     label: 標籤，預設 'ai'，現金則為 'cash'
     price: 成交單價或金額
     share: 成交股數，現金則為 1
-    date: 股票與現金日期 (YYYY-MM-DD)，[MUST]: 若未提及日期，嚴格要求填入""
+    date: 股票與現金日期 (YYYY/MM/DD)
     """
-    if not date or date == "":
+    if date == None:
         date = datetime.now().strftime('%Y/%m/%d')
     
     # 直接呼叫你匯入的 update_journal
@@ -183,6 +188,7 @@ def init_kitsune_agent():
     你的任務是協助我(管理員)管理量化交易系統。
     你的任務：呼叫工具訓練模型、預測、回測、「寫入交易紀錄」
     接收到交易指令時（如：我買了...），請精準提取代碼、價格、股數並呼叫 add_trade_record。
+    若使用者未提及日期，add_trade_record之date參數務必傳入 None
     若使用者想要知道預測的公司業務，請搜尋並簡短告知(不要分析模型數據)。
     格式如下:
     3167 大量: PCB/半導體設備商
@@ -240,15 +246,14 @@ def main():
     print('')
     type_effect("   >> INITIALIZING KITSUNE KERNEL...")
     time.sleep(0.3)
+    type_effect("   >> WELCOME ARCHITECT")
+    time.sleep(0.3)
     if alerts:
-        type_effect('   >> [RISK CONTROL] : ALERT')
+        type_effect('   >> RISK CONTROL : [ALERT]')
         for msg in alerts:
             type_effect(f'   >> {msg}')
     else:
-        type_effect('   >> [RISK CONTROL] : SAFE')
-    time.sleep(0.3)
-    type_effect("   >> WELCOME ", 0.04, end_new_line=False)
-    type_effect("   [ ARCHITECT ]", 0.05)
+        type_effect('   >> RISK CONTROL : [SAFE]')
     time.sleep(0.3)
     print('')
     
@@ -285,6 +290,7 @@ def main():
             print("""\n
     /db : 更新當日資料庫
     /db_YYYYMMDD : 回補指定日期資料庫\n  
+    /db_rev : 更新營收資料庫\n
     /-q : 打開基金儀表板(經理人)             
     /-p : 打開投組儀表板(投資者)
     /-  : 打開所有儀表板\n
@@ -296,6 +302,12 @@ def main():
         if user_input == "/db":
             print("\n[更新資料庫]")
             res = update_database() # 直接呼叫函式
+            print(f"{res}")
+            continue
+
+        elif user_input == "/db_rev":
+            print("\n[更新營收資料庫]")
+            res = update_rev_database() # 直接呼叫函式
             print(f"{res}")
             continue
             

@@ -103,7 +103,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
                 '預測分數': round(row['predict_score'], 4),
                 '選股主因 (Feature:Contribution)': reason_str,
                 '該股當月報酬%': round(row[ret_col] * 100, 2),
-                '成交量/值(Log)': round(row['amount60'], 2) if 'amount60' in row else 'N/A',
+                '成交量': round(row['volume'], 2) if 'volume' in row else 'N/A',
                 # 'MOM': round(row['mom'], 2) if 'mom' in row else 'N/A',
             })
 
@@ -129,7 +129,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
     TRUST_ON         = False   # 是否啟用投信過濾（True = 剔除投信買賣超近 20 日完全為 0 的標的）
 
     rank_str = ','.join(map(str, select_rank))
-    print(f"\n啟動回測系統 V2 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
+    print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
     df = pd.read_csv(DATA_FILE, dtype={'id': str})
@@ -454,4 +454,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW'):
 
 
 if __name__ == "__main__":
-    backtester(version='v20', select_rank=list(range(1,6)), benchmark='00631L.TW')
+    backtester(version='v27', select_rank=list(range(1,4)), benchmark='00631L.TW')

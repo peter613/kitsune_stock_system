@@ -31,7 +31,7 @@ def plot_shap_values(model,test_pool,test_df,X_col,version):
     # 繪圖: SHAP 蜂群圖
     print("繪製 SHAP 蜂群圖...")
     plt.figure() 
-    shap.plots.beeswarm(shap_obj,max_display=15, show=False)
+    shap.plots.beeswarm(shap_obj,max_display=20, show=False)
     plt.savefig(config.PLOTS_REPORT_DIR/f'shap_beeswarm_v{version}.png', bbox_inches='tight')
 
     plt.show()
@@ -54,30 +54,30 @@ def create_cbm(version=None):
         #刪掉60日特徵 ("amount60","sma60","r2_60")
 
         # 均線與技術指標
-        "sma20",  "sma240", 
+        "sma20","sma200", 
 
         #趨勢強度
-        "kama", "adx",
+        "adx","kama",
         
         # 趨勢穩定度
         'r_20_abs',
         
-        # 流動性 (Log化)
+        # 流動性 (amount Log化)
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_5", "t_f_sync",
+        "trust_in_5", "trust_in_3", 
         
         # 基本面
-        "yoy_ma3_bias","yoy",
+        "yoy","yoy_ma3_bias",
 
         #突破與築底
-        "breakout_20", "breakout_240",
-        "support_20","support_240",
+        'a_breakout_20',
+        "breakout_20", "breakout_200",
+        "support_20","support_200",
     ]
 
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
-
     # 4. 切分訓練集 (前 80%) 與 驗證集 (後 20%)
     dates = df['date'].unique()
     split_idx = int(len(dates) * 0.8)
@@ -101,15 +101,20 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=10000,
+        iterations=50000,
         learning_rate=0.001,
         depth=6,
+        early_stopping_rounds=5000,
+        #決定模型最小化損失目標
         loss_function='YetiRank',
-        eval_metric='NDCG:top=5',
-        #early_stopping_rounds=5000,
-        verbose=100,
-        random_seed=42,
-        custom_metric=['PrecisionAt:top=5'],
+        #決定模型什麼時候停，搭配early stopping
+        eval_metric='NDCG:top=3',
+
+        #印出數據ㄋ
+        custom_metric=['NDCG:top=3','PrecisionAt:top=3'],
+        #每多少輪印進度
+        verbose=200,
+        random_seed=42
     )
 
     print("開始訓練模型...")
@@ -130,4 +135,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v20')
+    create_cbm(version='v28')

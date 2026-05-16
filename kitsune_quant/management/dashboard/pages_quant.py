@@ -479,7 +479,7 @@ def page_history(df_record, df_price, df_history):
     st.subheader(f"未實現損益 │ ${total_unrealized:,.0f}")
     if unrealized_data:
         df_un = pd.DataFrame(unrealized_data).sort_values("當前市值", ascending=False)
-        st.dataframe(df_un, width='stretch', hide_index=True,column_config=column_config_setting)
+        st.dataframe(df_un, width='stretch', hide_index=True)#若需要超連結可省略註解,column_config=column_config_setting)
 
     st.markdown("---")
 

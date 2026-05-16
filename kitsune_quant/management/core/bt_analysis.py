@@ -6,9 +6,9 @@ import numpy as np
 from scipy import stats
 from scipy.stats import gaussian_kde
 
-def rank_skewness(test_df):
+def rank_skewness(test_df,top_n=5):
     print("\n--- Individual Rank Skewness ---")
-    for i in range(1, 6):
+    for i in range(1, top_n+1):
         rank_df = test_df[test_df['排名'] == i].copy()
         
         if rank_df.empty:
@@ -17,7 +17,7 @@ def rank_skewness(test_df):
         skewness_value = rank_df['該股當月報酬%'].skew()
         print(f"Rank {i} Skewness : {skewness_value:.4f}")
 
-def portfolio_skewness(test_df, top_n=5):
+def portfolio_skewness(test_df, top_n=5,version='v25'):
     # 1. 嚴格篩選出前 N 名的獨立資料
     df_top_n = test_df[test_df['排名'] <= top_n]
 
@@ -48,7 +48,7 @@ def portfolio_skewness(test_df, top_n=5):
 
     # 產出終端機量化分析報告
     print("\n" + "="*60)
-    print(f"Kitsune System Quantitative Analysis (Top {top_n} Portfolio)")
+    print(f"Kitsune System Quantitative Analysis {version}(Top {top_n} Portfolio)")
     print("="*60)
     print(f"Sample Size (Months)     : {len(port_returns)}")
     print(f"Monthly Mean             : {mean_ret:.2f}%")
@@ -114,14 +114,14 @@ def plot_distribution(port_returns, top_n=5, version='v20'):
     plot_file = plot_path / f"distribution_analysis_{version}_top{top_n}.png"
     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     print(f"柱狀圖已存檔: {plot_file}")
-    plt.close()
+    plt.show()
 
-def main(version='v20', top_n=5):
+def bt_analysis(version='v20', top_n=5):
     file_path = config.BACKTEST_TRADELOG_DIR / f"trade_log_{version}_rank_1_2_3_4_5.csv"
     test_df = pd.read_csv(file_path, encoding='utf-8-sig')
-    rank_skewness(test_df)
-    port_returns, mean_ret, std_ret, skewness_value = portfolio_skewness(test_df, top_n=top_n)
+    rank_skewness(test_df, top_n=top_n)
+    port_returns, mean_ret, std_ret, skewness_value = portfolio_skewness(test_df, top_n=top_n, version=version)
     plot_distribution(port_returns, top_n=top_n, version=version)
 
 if __name__ == '__main__':
-    main(version='v20', top_n=5)
+    bt_analysis(version='v27', top_n=3)

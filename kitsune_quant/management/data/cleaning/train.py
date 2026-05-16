@@ -6,7 +6,6 @@ from talib import *
 from datetime import datetime
 import gc
 import config
-from kitsune_quant.management.data.cleaning.black_list import *
 from scipy.stats import entropy
 
 def create_training(version='v14', years_10=True, stock_filter=True):
@@ -34,18 +33,24 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         data['id'] = data['id'].astype(str).str.zfill(4)
 
     # ---------------------------------------------------------
-    # 2. 預先排除 (黑名單過濾)
+    # 2. 預先排除 (過濾)
     # ---------------------------------------------------------
     if stock_filter:
-        print("正在過濾低成長/非電子產業股票...")
+        print("正在保留白名單...")
         # ---------------------------------------------------------
-        # 非電子/傳統產業黑名單 (排除低成長、缺乏科技動能與投信作帳特性的類股)
+        # 白名單
         # ---------------------------------------------------------
-        get_black_prefixes = black_prefixes()
-        get_black_ids = black_ids()
+        get_white_list = pd.read_csv(config.WHITE_LIST_DIR / 'white_list.csv', encoding='utf-8-sig')
+        white_ids = get_white_list['id'].astype(str)
 
-        df = df[~df['id'].str.startswith(get_black_prefixes) & ~df['id'].isin(get_black_ids)].copy()
-        df_revenue = df_revenue[~df_revenue['id'].str.startswith(get_black_prefixes) & ~df_revenue['id'].isin(get_black_ids)].copy()
+        df = df[df['id'].isin(white_ids)].copy()
+        df_revenue = df_revenue[df_revenue['id'].isin(white_ids)].copy()
+        # ---------------------------------------------------------
+        # 黑名單(電信三雄)
+        # ---------------------------------------------------------
+        black_ids = ['2412', '3045', '4904']
+        df = df[~df['id'].isin(black_ids)].copy()
+        df_revenue = df_revenue[~df_revenue['id'].isin(black_ids)].copy()
 
     # ---------------------------------------------------------
     # 3. 時間切割 (10年長度 + 緩衝期)
@@ -79,10 +84,8 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         trust_net  = group['Trust_Net'].values.astype(float)
         foreign_net= group['Foreign_Net'].values.astype(float)
 
-        amount_ln  = np.log1p(amount)
-
         # ── 均線 ──────────────────────────────────────────────
-        sma240 = close / (SMA(close, timeperiod=240) + 1e-9)
+        sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
         sma20  = close / (SMA(close, timeperiod=20)  + 1e-9)
 
         try:
@@ -95,29 +98,37 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         #atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
 
         # ── 成交值均線 ────────────────────────────────────────
+        amount_ln  = np.log1p(amount)
         amount20 = SMA(amount_ln, 20)
+        amount_ema_20 = EMA(amount_ln, 20)
 
         # ── 突破 / 支撐  (範圍 0~1)───────────────────────────────────────
-        # 突破 : 1代表在最高點
-        breakout_20 = close / (MAX(high, timeperiod=20) + 1e-9)
-        breakout_240 = close / (MAX(high, timeperiod=240) + 1e-9)
-        # 築底 : 1代表無窮遠離底部
-        support_20 = 1 - (MIN(low, timeperiod=20) / (close + 1e-9))
-        support_240 = 1 - (MIN(low, timeperiod=240) / (close + 1e-9))
+        # 成交值突破
+        amount_breakout_20  = amount / (SMA(amount,20) + 1e-9)
+        # 價格突破 : 1代表在最高點
+        breakout_20 = close / (MAX(close, timeperiod=20) + 1e-9)
+        breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
+        # 價格築底 : 1代表無窮遠離底部
+        support_20 = 1 - (MIN(close, timeperiod=20) / (close + 1e-9))
+        support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
 
         # ── 法人籌碼 ──────────────────────────────────────────
         vol_5   = SMA(volume, 5) * 5 + 1
+        vol_3   = SMA(volume, 3) * 3 + 1
         t_net_5 = SMA(trust_net,   5) * 5
+        t_net_3 = SMA(trust_net,   3) * 3
         f_net_5 = SMA(foreign_net, 5) * 5
 
         trust_in_5   = t_net_5 / vol_5
-        foreign_in_5 = f_net_5 / vol_5
-        t_f_sync     = trust_in_5 * foreign_in_5
+        trust_in_3   = t_net_3 / vol_3
+        #foreign_in_5 = f_net_5 / vol_5
+        #t_f_sync_5     = trust_in_5 * foreign_in_5
 
         # ── 趨勢相關 ──────────────────────────────────────────
         time_idx = np.arange(len(close), dtype=float)
         r_20     = CORREL(close, time_idx, timeperiod=20)
         r_20_abs = np.abs(r_20)
+
 
         # ── 標籤 ──────────────────────────────────────────────
         close_shifted = np.empty(len(close))
@@ -128,19 +139,21 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         # ── 一次性寫回 DataFrame ──────────────────────────────
         group = group.copy()          # 避免 SettingWithCopyWarning
         cols = {
-            'sma240'      : sma240,
-            'sma20'       : sma20,
-            'kama'        : kama,
-            'adx'         : adx,
-            'amount20'    : amount20,
-            'breakout_20' : breakout_20,
-            'breakout_240': breakout_240,
-            'support_20'  : support_20,
-            'support_240' : support_240,
-            'trust_in_5'  : trust_in_5,
-            't_f_sync'    : t_f_sync,
-            'r_20_abs'    : r_20_abs,
-            'return_20d'  : return_20d,
+            'sma200'        : sma200,
+            'sma20'         : sma20,
+            'kama'          : kama,
+            'adx'           : adx,
+            'amount20'      : amount20,
+            'amount_ema_20' : amount_ema_20,
+            'a_breakout_20' : amount_breakout_20,
+            'breakout_20'   : breakout_20,
+            'breakout_200'  : breakout_200,
+            'support_20'    : support_20,
+            'support_200'   : support_200,
+            'trust_in_5'    : trust_in_5,
+            'trust_in_3'    : trust_in_3,
+            'r_20_abs'          : r_20_abs,
+            'return_20d'    : return_20d,
         }
         for col, arr in cols.items():
             group[col] = arr
@@ -163,7 +176,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     
     # 營收 YOY 均線
     df_revenue = df_revenue.sort_values(['id', 'date'])
-    df_revenue['yoy_ma3'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(3).mean())
+    df_revenue['yoy_ma3'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(5).mean())
     
     # 建立 Merge Key (遞延一個月對齊)
     df_revenue["merge_key"] = df_revenue["date"].dt.to_period("M").apply(lambda x: x + 1)
@@ -193,8 +206,8 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     
     final_df = df[df['date'].isin(trade_dates_map['actual_date'].unique())].copy()
     
-    print("執行流動性排名過濾 (Top 1/3)...")
-    final_df['liq_rank'] = final_df.groupby('date')['amount20'].rank(ascending=False, method='min')
+    print("執行EMA成交值流動性過濾 (保留Top 1/3)...")
+    final_df['liq_rank'] = final_df.groupby('date')['amount_ema_20'].rank(ascending=False, method='min')
     final_df['day_count'] = final_df.groupby('date')['id'].transform('count')
     final_df = final_df[final_df['liq_rank'] <= (final_df['day_count'] / 3)].copy()
 
@@ -207,6 +220,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         final_df[col] = final_df[col].clip(lower=-100.0, upper=100.0)
 
     final_df = final_df.dropna().reset_index(drop=True)
+
     # 截面排名標籤 (0~1)
     final_df['label'] = final_df.groupby('date')['return_20d'].rank(pct=True)
 
@@ -215,7 +229,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     # ---------------------------------------------------------
     final_df.to_csv(file_save_name, index=False, encoding='utf-8-sig')
     print(f"訓練集建置成功！檔案位置: {file_save_name}")
-    print(f"樣本總數: {len(final_df)} | 最新日期: {final_df['date'].max().date()}")
+    print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v21', years_10=True, stock_filter=True)
+    create_training(version='v28', years_10=True, stock_filter=True)

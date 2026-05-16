@@ -16,6 +16,8 @@ catboost_info/
 #檔案太大
 *.csv
 *.parquet
+*.png
+*.cbm
 
 #筆記
 note.txt

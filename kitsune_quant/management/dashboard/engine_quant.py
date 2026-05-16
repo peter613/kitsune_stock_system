@@ -41,7 +41,7 @@ def load_data():
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
 
     # ── 申購/贖回紀錄（transaction.csv）──
-    df_flows = pd.read_csv(file_path_transaction, dtype={'id': str})
+    df_flows = pd.read_csv(file_path_transaction, dtype={'id': str}, encoding='utf-8-sig')
     df_flows.columns = df_flows.columns.str.strip().str.lower()
     df_flows['date']  = pd.to_datetime(df_flows['date'], errors='coerce').dt.normalize()
     df_flows = df_flows[df_flows['date'] >= START_DATE].copy()
@@ -166,7 +166,8 @@ def calculate_settlement_data(df_record, df_price):
                 "已實現損益": round(total_r_pnl, 0),
                 "回收現金":   round(total_revenue, 0),
             })
-
+        realized_data = sorted(realized_data, key=lambda x: x["日期"], reverse=True)
+        
         if cum_shares > 0:
             px           = latest_px.get(aid, 0.0)
             mv           = cum_shares * px

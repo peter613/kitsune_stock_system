@@ -175,7 +175,7 @@ def chips_tpex(date_str):
     except Exception as e:
         print(f"[解析錯誤] : {e}")
         return None    
-    
+
     df_raw = dfs[0] 
     
     df = df_raw.iloc[:, [0, 1, 4, 13]].copy() 

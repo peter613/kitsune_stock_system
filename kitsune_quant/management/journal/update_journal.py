@@ -27,5 +27,8 @@ def update_journal(id, name, action, label, price, share, date):
 
     # 4. 覆蓋存檔
     df_save.to_csv(data_path, index=False, encoding="utf-8-sig")
+
+    df_journal = pd.read_csv(data_path, encoding="utf-8-sig")
+    print(df_journal.tail(5))
     
     return f"交易已記錄: {date} | {action} | {name} | 價:{price} | 股:{share}"

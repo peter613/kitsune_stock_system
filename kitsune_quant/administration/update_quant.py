@@ -44,16 +44,25 @@ def _sell_proceeds(price: float, share: float, stock_id: str) -> float:
 # ──────────────────────────────────────────
 def _load_raw_data():
     # journal.csv
-    df_record = pd.read_csv(config.JOURNAL_DIR / "journal_quant.csv", dtype={'id': str})
+
+    # journal_quant.csv
+    journal_path = config.JOURNAL_DIR / "journal_quant.csv"
+    if not os.path.exists(journal_path):
+        df_record = pd.DataFrame(columns=['date', 'id', 'price', 'share'])
+        df_record.to_csv(journal_path, index=False, encoding='utf-8-sig')
+    df_record = pd.read_csv(journal_path, dtype={'id': str})
     df_record.columns  = df_record.columns.str.strip().str.lower()
     df_record['date']  = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
     df_record = df_record[df_record['date'] >= START_DATE].copy()
     df_record['price'] = pd.to_numeric(df_record['price'], errors='coerce').fillna(0)
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
 
-    # transaction.csv
+    # transaction_quant.csv
     transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
-    df_flows = pd.read_csv(transaction_path)
+    if not os.path.exists(transaction_path):
+        df_flows = pd.DataFrame(columns=['date', 'id', 'action', 'price', 'share'])
+        df_flows.to_csv(transaction_path, index=False, encoding='utf-8-sig')
+    df_flows = pd.read_csv(transaction_path, encoding='utf-8-sig')
     df_flows.columns = df_flows.columns.str.strip().str.lower()
     df_flows['date']  = pd.to_datetime(df_flows['date'], errors='coerce').dt.normalize()
     df_flows['price'] = pd.to_numeric(df_flows['price'], errors='coerce')  # 保留 NaN
@@ -190,7 +199,7 @@ def _backfill_transaction(df_flows, df_nav, transaction_path):
             filled += 1
 
     if filled > 0:
-        df_flows.to_csv(transaction_path, index=False,encoding = 'utf-8-sig')
+        df_flows.to_csv(transaction_path, index=False, encoding = 'utf-8-sig')
         print(f"transaction.csv：回填 {filled} 筆，已寫回。")
     else:
         print("transaction.csv：無需回填，略過。")
@@ -211,7 +220,7 @@ def update_quant():
     # 輸出 1：quant_navpu.csv
     nav_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv"
     nav_path.parent.mkdir(parents=True, exist_ok=True)
-    df_nav.to_csv(nav_path, index=False)
+    df_nav.to_csv(nav_path, index=False,encoding='utf-8-sig')
     print(f'基金帳務更新完成，目前總筆數 {len(df_nav)} 筆')
     print(f"現淨值(NAV) {df_nav['nav_per_unit'].iloc[-1]:.4f}")
 

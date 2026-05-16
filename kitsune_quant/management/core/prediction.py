@@ -74,37 +74,7 @@ def search_stock(stock_name: str, version='v20') -> str:
         if col in analysis_df.columns and pd.api.types.is_numeric_dtype(analysis_df[col]):
             analysis_df[f"{col}_pct"] = analysis_df[col].rank(pct=True)
             valid_features.append(col)
-    
-    # 取得查詢股票的特徵百分位
-    stock_result = analysis_df[analysis_df['rank'] == rank].iloc[0]
-    
-    strong_feats = []  # PR > 70%
-    weak_feats = []    # PR < 30%
-    
-    for feat in valid_features:
-        pct_val = stock_result[f"{feat}_pct"]
-        if pct_val > 0.7:
-            strong_feats.append((feat, pct_val * 100))
-        elif pct_val < 0.3:
-            weak_feats.append((feat, pct_val * 100))
-    
-    strong_feats = sorted(strong_feats, key=lambda x: x[1], reverse=True)
-    weak_feats = sorted(weak_feats, key=lambda x: x[1])
-    
-    # 構建分析報告
-    feature_analysis = ""
-    if strong_feats:
-        feature_analysis += "強勢特徵 (PR > 70%):\n"
-        for feat, pct in strong_feats[:5]:
-            feature_analysis += f"   • {feat}: {pct:.1f}%\n"
-    
-    if weak_feats:
-        feature_analysis += "弱勢特徵 (PR < 30%) - 排名靠後原因:\n"
-        for feat, pct in weak_feats[:5]:
-            feature_analysis += f"   • {feat}: {pct:.1f}%\n"
-    else:
-        feature_analysis += "沒有明顯弱勢特徵\n"
-    
+
     result_str = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 股票代碼: {stock_id}
@@ -114,7 +84,6 @@ def search_stock(stock_name: str, version='v20') -> str:
 排名: 第 {rank} 名（共 {total_stocks} 檔股票）
 排名百分位: 前 {(100-percentile):.1f}%
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{feature_analysis}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
     return result_str
 
@@ -213,5 +182,5 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     return f"以下是選股結果與其在全市場的特徵百分位(PR)排名：{ai_analysis_data}"
 
 if __name__ == "__main__":
-    # print(search_stock('青雲', version='v20'))
-    prediction(version='v20', select_ranks=[c for c in range(1,6)])
+    #print(search_stock('南亞科', version='v25'))
+    prediction(version='v27', select_ranks=[c for c in range(1,4)])
