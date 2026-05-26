@@ -151,7 +151,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
             strong_feats = []
             for feat in valid_features:
                 pct_val = row[f"{feat}_pct"]
-                if pct_val > 0.8:
+                if pct_val > 0.75:
                     strong_feats.append((feat, pct_val))
             
             strong_feats = sorted(strong_feats, key=lambda x: x[1], reverse=True)
@@ -172,7 +172,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
     # 4. 存檔
     top_picks = target_df[target_df['rank'].isin(select_ranks)].copy()
-    file_name = f'{datetime.now().strftime("%Y-%m-%d")}_{version}_prediction.csv'
+    file_name = f'{datetime.now().strftime("%Y-%m-%d")}_{version}.csv'
     output_dir = config.PREDICTION_REPORT_DIR/ file_name
     
     top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')

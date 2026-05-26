@@ -9,12 +9,12 @@ Kitsune Kernel — 主程式入口
 import streamlit as st
 import pandas as pd
 
-from kitsune_quant.management.dashboard.engine_quant import (
+from kitsune_quant.management.dashboard.engine import (
     load_data,
     calculate_settlement_data,
     generate_system_alerts,
 )
-from pages_quant import (
+from kitsune_quant.management.dashboard.pages import (
     page_fund_overview,
     page_fund_nav,
     page_fund_return,
@@ -113,7 +113,7 @@ def alert(message):
 @st.cache_data
 def load_nav_history():
     """
-    讀取 navpu_quant.csv，補算 pages 需要的衍生欄位：
+    讀取 navpu.csv，補算 pages 需要的衍生欄位：
     roi_total, roi_0050, roi_00631L, dd_pct, total_units, total_nav, cash
     """
     # ── 基金 NAV ──

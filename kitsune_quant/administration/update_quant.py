@@ -1,7 +1,7 @@
 ﻿"""
 update_fund_ledger.py
 職責：
-  1. 計算每日基金帳務 → 輸出 quant_navpu.csv
+  1. 計算每日基金帳務 → 輸出 navpu_quant.csv
   2. 回填 transaction.csv 的空白欄位
      - share 空白 → share = price / nav_per_unit
      - price 空白 → price = share * nav_per_unit
@@ -217,7 +217,7 @@ def update_quant():
         print("警告：計算結果為空，檔案未更新。")
         return
 
-    # 輸出 1：quant_navpu.csv
+    # 輸出 1：navpu_quant.csv
     nav_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv"
     nav_path.parent.mkdir(parents=True, exist_ok=True)
     df_nav.to_csv(nav_path, index=False,encoding='utf-8-sig')

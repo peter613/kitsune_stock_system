@@ -3,7 +3,6 @@ import os
 import config
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import stats
 from scipy.stats import gaussian_kde
 
 def rank_skewness(test_df,top_n=5):
@@ -68,19 +67,30 @@ IQR Upper Fence (Q3+1.5*IQR)   : {upper_fence:.2f}%
     
     return port_returns, mean_ret, std_ret, skewness_value
 
-def plot_distribution(port_returns, top_n=5, version='v20'):
-    """繪製報酬分布直方圖並存檔"""
+def plot_distribution(port_returns, top_n=5, version='v27'):
+    """繪製報酬分布直方圖並存檔 (連續刻度邊界對齊版 - 2.5% 級距)"""
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.suptitle(f'Portfolio Monthly Returns Distribution (Top {top_n})', fontsize=14, fontweight='bold')
     
-    # 直方圖 - 使用頻率（累計次數）而非密度
-    n, bins, patches = ax.hist(port_returns, bins=30, density=False, alpha=0.7, color='steelblue', edgecolor='black', label='Frequency')
+    # 1. 建立明確的連續數值區間 (低熵原則：拔除 math 模組，使用原生 // 運算)
+    bin_width = 2.5
     
-    # 使用 KDE 繪製實際分布曲線（同軸）
+    # 使用原生的 // (向下取整除法) 來鎖死邊界
+    min_val = (port_returns.min() // bin_width) * bin_width
+    # 針對最大值，直接向下取整後 +1 個單位，即可達成超越極值的包覆效果
+    max_val = ((port_returns.max() // bin_width) + 1) * bin_width
+    
+    bins = np.arange(min_val, max_val + bin_width, bin_width)
+    
+    # 2. 直方圖 - 帶入自訂的 bins 陣列
+    n, _, patches = ax.hist(port_returns, bins=bins, density=False, alpha=0.7, 
+                            color='steelblue', edgecolor='white', label='Frequency')
+    
+    # 3. 使用 KDE 繪製實際分布曲線（同軸）
     kde = gaussian_kde(port_returns)
-    x = np.linspace(port_returns.min(), port_returns.max(), 100)
+    x = np.linspace(min_val, max_val, 200)
     # 將 KDE 密度值縮放為頻率尺度
-    kde_scaled = kde(x) * len(port_returns) * (bins[1] - bins[0])
+    kde_scaled = kde(x) * len(port_returns) * bin_width
     ax.plot(x, kde_scaled, 'r-', linewidth=2.5, label='Actual Distribution (KDE)')
     
     # 添加統計信息
@@ -101,11 +111,19 @@ def plot_distribution(port_returns, top_n=5, version='v20'):
     ax.axvline(lower_fence, color='red', linestyle='--', linewidth=1.0, alpha=0.7, label=f'IQR Fence Lower: {lower_fence:.2f}%')
     ax.axvline(upper_fence, color='red', linestyle='--', linewidth=1.0, alpha=0.7, label=f'IQR Fence Upper: {upper_fence:.2f}%')
     
+    # 4. 強制 X 軸刻度對齊柱子的邊界
+    ax.set_xticks(bins)
+    # 因為級距是 2.5，改用 .1f 顯示小數點第一位，讓視覺依然純粹
+    ax.set_xticklabels([f"{b:.1f}" for b in bins], rotation=45, ha='right', fontsize=9)
+    # 左右留白半個柱子的空間
+    ax.set_xlim(min_val - (bin_width / 2), max_val + (bin_width / 2))
+    
     ax.set_xlabel('Monthly Return (%)', fontsize=11)
     ax.set_ylabel('Frequency (Count)', fontsize=11)
     ax.set_title(f'Skewness: {skewness:.4f}, Kurtosis: {kurtosis:.4f}', fontsize=11)
-    ax.legend(loc='upper left', fontsize=9)
-    ax.grid(alpha=0.3)
+    
+    ax.legend(loc='upper right', fontsize=9) 
+    ax.grid(axis='y', alpha=0.3) 
     
     plt.tight_layout()
     
@@ -114,14 +132,95 @@ def plot_distribution(port_returns, top_n=5, version='v20'):
     plot_file = plot_path / f"distribution_analysis_{version}_top{top_n}.png"
     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     print(f"柱狀圖已存檔: {plot_file}")
-    plt.show()
+    
+    plt.close()
 
-def bt_analysis(version='v20', top_n=5):
-    file_path = config.BACKTEST_TRADELOG_DIR / f"trade_log_{version}_rank_1_2_3_4_5.csv"
+def plot_score_distribution(test_df, version='v27', top_n=3):
+    # 1. 建立分數區間 (以 0.05 為單位)
+    bin_width = 0.05
+    bins = np.arange(0, 1.0 + bin_width, bin_width)
+    
+    # 2. 資料處理：標記勝負與分箱
+    df_plot = test_df.copy()
+    df_plot['Result'] = np.where(df_plot['該股當月報酬%'] > 0, 'Win', 'Loss')
+    df_plot['Score_Bin'] = pd.cut(df_plot['預測分數'], bins=bins, right=False)
+    
+    # 3. 聚合計算次數
+    agg_df = df_plot.groupby('Score_Bin', observed=False)['Result'].value_counts().unstack(fill_value=0)
+    
+    for col in ['Win', 'Loss']:
+        if col not in agg_df.columns:
+            agg_df[col] = 0
+            
+    agg_df['Total'] = agg_df['Win'] + agg_df['Loss']
+    
+    # 剔除無交易次數的區間
+    agg_df = agg_df[agg_df['Total'] > 0]
+    
+    # 4. 繪製圖表
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # 取得每個區間的「中心點」作為柱子的 X 座標 (例如 0.35 與 0.40 的中心是 0.375)
+    x_centers = [interval.mid for interval in agg_df.index]
+    
+    # 繪製堆疊柱狀圖：設定 width 為區間寬度 (0.05)，讓柱子與刻度完美貼合
+    ax.bar(x_centers, agg_df['Loss'], width=bin_width, label='Loss (<= 0%)', color='#d62728', edgecolor='white')
+    ax.bar(x_centers, agg_df['Win'], width=bin_width, bottom=agg_df['Loss'], label='Win (> 0%)', color='#1f77b4', edgecolor='white')
+    
+    # 將次數與佔比結構標示於對應區塊內
+    for i, center in enumerate(x_centers):
+        total = agg_df['Total'].iloc[i]
+        win_count = agg_df['Win'].iloc[i]
+        loss_count = agg_df['Loss'].iloc[i]
+        
+        if loss_count > 0:
+            loss_pct = (loss_count / total) * 100
+            ax.text(center, loss_count / 2, f"{loss_count}\n({loss_pct:.0f}%)", 
+                    ha='center', va='center', color='white', fontsize=9)
+            
+        if win_count > 0:
+            win_pct = (win_count / total) * 100
+            ax.text(center, loss_count + (win_count / 2), f"{win_count}\n({win_pct:.0f}%)", 
+                    ha='center', va='center', color='white', fontsize=9)
+    
+    # 5. 格式設定 (將刻度線精準設定在區間的邊界)
+    # 動態取得當下有資料的最小與最大邊界，確保畫面不過度留白
+    min_edge = agg_df.index[0].left
+    max_edge = agg_df.index[-1].right
+    
+    # 產生要顯示的刻度 (例如 0.35, 0.40, 0.45...)
+    active_bins = np.arange(min_edge, max_edge + bin_width, bin_width)
+    
+    ax.set_xticks(active_bins)
+    ax.set_xticklabels([f"{b:.2f}" for b in active_bins], rotation=0, ha='center', fontsize=10)
+    
+    # 設定 X 軸的顯示範圍，左右各留半個柱子的寬度
+    ax.set_xlim(min_edge - (bin_width / 2), max_edge + (bin_width / 2))
+    
+    ax.set_xlabel('Prediction Score Threshold', fontsize=11)
+    ax.set_ylabel('Frequency (Count)', fontsize=11)
+    ax.set_title(f'Score Distribution (Version: {version}, Top: {top_n})', fontsize=12)
+    
+    ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # 6. 存檔與清理
+    plot_path = config.PLOTS_REPORT_DIR
+    plot_file = plot_path / f"score_distribution_{version}_top{top_n}.png"
+    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"分數柱狀圖已存檔: {plot_file}")
+
+def bt_analysis(version='v27', top_n=3):
+    file_path = config.BACKTEST_TRADELOG_DIR / f"trade_log_rank_1_2_3_{version}.csv"
     test_df = pd.read_csv(file_path, encoding='utf-8-sig')
     rank_skewness(test_df, top_n=top_n)
     port_returns, mean_ret, std_ret, skewness_value = portfolio_skewness(test_df, top_n=top_n, version=version)
     plot_distribution(port_returns, top_n=top_n, version=version)
+    plot_score_distribution(test_df, version=version, top_n=top_n)
 
 if __name__ == '__main__':
     bt_analysis(version='v27', top_n=3)

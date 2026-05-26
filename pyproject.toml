@@ -18,13 +18,12 @@ dependencies = [
     "requests",
     "urllib3",
     "TA-Lib",
-    "seaborn",
     "lxml",
     "pyarrow",
-    "google-genai",
     "python-dotenv",
     "html5lib",
-    "supabase"
+    "supabase",
+    "questionary"
 ]
 
 [tool.setuptools]

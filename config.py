@@ -21,7 +21,7 @@ JOURNAL_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "journal"
 
 # Reports Path
 BACKTEST_TRADELOG_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "reports" /"backtest_tradelogs"
-PREDICTION_REPORT_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "reports" /"monthly_predictions"
+PREDICTION_REPORT_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "reports" /"predictions"
 PLOTS_REPORT_DIR = KITSUNE_QUANT_MANAGEMENT_DIR / "reports" /"plots"
 
 #dashboard path

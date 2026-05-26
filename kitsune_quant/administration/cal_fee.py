@@ -1,6 +1,6 @@
 ﻿import os
 import pandas as pd
-from kitsune_quant.management.dashboard.engine_quant import load_data, calculate_daily_history, FundSubscriber
+from kitsune_quant.management.dashboard.engine import load_data, calculate_daily_history, FundSubscriber
 import config
 from datetime import datetime
 

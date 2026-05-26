@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
-from kitsune_quant.management.dashboard.engine_quant import calculate_settlement_data
+from kitsune_quant.management.dashboard.engine import calculate_settlement_data
 
 # ══════════════════════════════════════════
 # 初始化繪圖格式
@@ -333,57 +333,34 @@ def page_fund_quality(df_history):
     roi_window = ((1 + last['roi_total']) / (1 + first['roi_total']) - 1) * 100
     max_dd     = df_history['dd_pct'].min() * 100
     sharpe     = (daily_ret.mean() / daily_ret.std() * (252 ** 0.5)) if daily_ret.std() > 0 else 0
+    downside_std = daily_ret[daily_ret < 0].std()
+    sortino = (daily_ret.mean() / downside_std * (252 ** 0.5)) if downside_std > 0 else 0
     ann_ret    = (1 + roi_window / 100) ** (252 / max(len(df_history), 1)) - 1
     calmar     = ann_ret / abs(max_dd / 100) if max_dd < 0 else 0
+    port_vol = daily_ret.std() * (252 ** 0.5) * 100
 
-    # ── 最新 rolling 20日波動率 ──
-    port_vol = daily_ret.rolling(20).std().iloc[-1] * (252 ** 0.5) * 100
-
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4,col5 = st.columns(5)
     col1.metric("Sharpe",   f"{sharpe:.2f}")
-    col2.metric("Calmar",   f"{calmar:.2f}")
-    col3.metric("20日波動率",   f"{port_vol:.1f}%")
-    col4.metric("最大回撤", f"{max_dd:.2f}%")
+    col2.metric("Sortino",   f"{sortino:.2f}")
+    col3.metric("Calmar",   f"{calmar:.2f}")
+    col4.metric("波動率",   f"{port_vol:.1f}%")
+    col5.metric("最大回撤", f"{max_dd:.2f}%")
 
-    # ── 圖1：Rolling 20日 Sharpe ──
-    rolling_sharpe = (
-        daily_ret.rolling(20).mean() / daily_ret.rolling(20).std() * (252 ** 0.5)
-    )
-    fig1 = go.Figure()
-    fig1.add_trace(go.Scatter(
-        x=df_history['date'].iloc[1:],
-        y=rolling_sharpe,
-        mode='lines',
-        line=dict(color='#4F247E', width=2.0),
-        hovertemplate='Sharpe: %{y:.2f}<extra></extra>'
-    ))
-    fig1.add_hline(
-        y=0, line_dash='dot', line_color='gray', line_width=1
-    )
-    fig1.add_hline(
-        y=1, line_dash='dot', line_color='#68CCFD', line_width=1,
-        annotation_text="Sharpe = 1",
-        annotation_font=dict(size=11, color="#68CCFD"),
-        annotation_position="right"
-    )
-    fig1.update_layout(**customize_plotly("Rolling Sharpe (20日)"), showlegend=False)
-    fig1.update_xaxes(rangeslider=dict(visible=False), type="date")
-    st.plotly_chart(fig1, width='stretch')
 
     # ── 圖2：回撤面積圖 ──
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(
         x=df_history['date'],
         y=df_history['dd_pct'] * 100,
         fill='tozeroy',
-        fillcolor='rgba(255,51,51,0.15)',
-        line=dict(color="#C0392B", width=1.0),
+        fillcolor='rgba(255,51,51,0.08)',
+        line=dict(color="#C0392B", width=0.5),
         name="回撤",
         hovertemplate='%{y:.2f}%<extra></extra>'
     ))
-    fig2.update_layout(**customize_plotly("回撤 (%)"), showlegend=False)
-    fig2.update_xaxes(rangeslider=dict(visible=False), type="date")
-    st.plotly_chart(fig2, width='stretch')
+    fig1.update_layout(**customize_plotly("回撤 (%)"), showlegend=False)
+    fig1.update_xaxes(rangeslider=dict(visible=False), type="date")
+    st.plotly_chart(fig1, width='stretch')
 
 # ══════════════════════════════════════════
 # 頁面 5：狐狸基金資產配置

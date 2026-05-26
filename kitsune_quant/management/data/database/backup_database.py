@@ -8,19 +8,17 @@ from datetime import datetime
 env_path = config.BASE_DIR/'.env'
 load_dotenv(dotenv_path=env_path)
 
-# 2. 讀取環境變數 (括號內的名稱必須與 .env 檔案中設定的一致)
 URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 
-# 檢查是否有成功讀取到 (若無設定會回傳 None)
 if not URL or not KEY:
     raise ValueError("找不到 SUPABASE_URL 或 SUPABASE_SECRET_KEY，請確認 .env 檔案設定")
 
-# 3. 建立 Supabase 連線
 supabase: Client = create_client(URL, KEY)
 
-# 4. 執行備份的函式
+
 def backup_to_supabase(bucket_name: str, local_file_path: str, supabase_file_path: str):
+    label = os.path.basename(local_file_path)
     try:
         with open(local_file_path, "rb") as f:
             supabase.storage.from_(bucket_name).upload(
@@ -28,9 +26,10 @@ def backup_to_supabase(bucket_name: str, local_file_path: str, supabase_file_pat
                 file=f,
                 file_options={"x-upsert": "true"}
             )
-        return True  # 成功
+        print(f"{label} 上傳成功")
+        return True
     except Exception as e:
-        print(f"上傳失敗: {e}")
+        print(f"{label} 上傳失敗: {e}")
         return False
 
 
@@ -57,6 +56,7 @@ def backup():
         years_to_upload = set(df['year'].unique())
 
     responses = []
+
     for year, group in df.groupby('year'):
         if year in years_to_upload:
             temp_file = f"{config.DATABASE_DIR}/market_{year}.parquet"
@@ -67,19 +67,16 @@ def backup():
                 f"market/market_{year}.parquet"
             )
             responses.append(response)
-            os.remove(temp_file)  # 刪除臨時文件
+            os.remove(temp_file)
 
-    response_revenue = backup_to_supabase(
-        'stock_data_backup',
-        f"{config.DATABASE_DIR}/revenue.csv",
-        "revenue/revenue.csv"
-    )
-    responses.append(response_revenue)
+    for local, remote in [
+        (f"{config.DATABASE_DIR}/revenue.csv",                                    "revenue/revenue.csv"),
+        (f"{config.JOURNAL_DIR}/journal_quant.csv",                               "trading_record/trading_record.csv"),
+        (f"{config.KITSUNE_QUANT_ADMINISTRATION_DIR}/transaction_quant.csv",      "transaction/transaction.csv"),
+    ]:
+        responses.append(backup_to_supabase('stock_data_backup', local, remote))
 
-    if all(responses):
-        print("資料上傳成功")
-    else:
-        print("資料上傳失敗")
+    print("\n所有資料上傳成功" if all(responses) else "\n部分資料上傳失敗")
 
 
 if __name__ == '__main__':

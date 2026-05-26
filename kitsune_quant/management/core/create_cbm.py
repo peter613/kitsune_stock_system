@@ -51,7 +51,6 @@ def create_cbm(version=None):
     df = df.sort_values(['date', 'id']).reset_index(drop=True)
 
     feature_cols = [
-        #刪掉60日特徵 ("amount60","sma60","r2_60")
 
         # 均線與技術指標
         "sma20","sma200", 

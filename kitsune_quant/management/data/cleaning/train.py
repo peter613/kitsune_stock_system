@@ -6,7 +6,6 @@ from talib import *
 from datetime import datetime
 import gc
 import config
-from scipy.stats import entropy
 
 def create_training(version='v14', years_10=True, stock_filter=True):
     file_save_name = config.FEATURES_DIR / f'train_{version}.csv'
@@ -88,6 +87,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
         sma20  = close / (SMA(close, timeperiod=20)  + 1e-9)
 
+        # ── 計算個股kama ──────────
         try:
             kama = close / (KAMA(close, timeperiod=30) + 1e-9)
         except Exception:
@@ -129,8 +129,13 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         r_20     = CORREL(close, time_idx, timeperiod=20)
         r_20_abs = np.abs(r_20)
 
+        # ── 系統性風險相關 ───────────────────────
+        # ── 1. 計算個股每日報酬率 ──────────────────────────────
+        daily_return = np.empty(len(close))
+        daily_return[0] = 0
+        daily_return[1:] = (close[1:] / (close[:-1] + 1e-9)) - 1
 
-        # ── 標籤 ──────────────────────────────────────────────
+        # ── 計算 20 日實際報酬 ──────────────────
         close_shifted = np.empty(len(close))
         close_shifted[:-20] = close[20:]
         close_shifted[-20:] = np.nan
