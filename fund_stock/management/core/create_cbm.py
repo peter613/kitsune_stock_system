@@ -25,23 +25,25 @@ def plot_shap_values(model,test_pool,test_df,X_col,version):
 
     #繪圖: SHAP 柱狀圖
     print("繪製 SHAP 柱狀圖...")
+    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
     shap.plots.bar(shap_obj,max_display=15, show=False)
-    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_bar_v{version}.png', bbox_inches='tight')
+    plt.savefig(plot_dir / 'shap_bar.png', bbox_inches='tight')
 
     # 繪圖: SHAP 蜂群圖
     print("繪製 SHAP 蜂群圖...")
     plt.figure() 
     shap.plots.beeswarm(shap_obj,max_display=20, show=False)
-    plt.savefig(config.PLOTS_REPORT_DIR/f'shap_beeswarm_v{version}.png', bbox_inches='tight')
+    plt.savefig(plot_dir / 'shap_beeswarm.png', bbox_inches='tight')
 
     plt.show()
 
 def create_cbm(version=None):
     # 1. 設定路徑
 
+    cbm_version_dir = config.get_version_dir(config.CBM_DIR, version)
     data_path = config.FEATURES_DIR / f"train_{version}.csv"
-    model_save_path = config.CBM_DIR / f"strategy_{version}.cbm"
-    feature_save_path_json = config.CBM_DIR / f"feature_names_{version}.json"
+    model_save_path = cbm_version_dir / "strategy.cbm"
+    feature_save_path_json = cbm_version_dir / "feature_names.json"
 
     # 2. 讀取資料
     print(f"正在讀取資料: {data_path}")
@@ -56,22 +58,18 @@ def create_cbm(version=None):
         "sma20","sma200", 
 
         #趨勢強度
-        "adx","kama",
-        
-        # 趨勢穩定度
-        'r_20_abs',
+        "kama","adx",
         
         # 流動性 (amount Log化)
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_5", "trust_in_3", 
+        "trust_in_3", "trust_in_10",
         
         # 基本面
-        "yoy","yoy_ma3_bias",
+        "yoy","yoy_ma5_bias",
 
         #突破與築底
-        'a_breakout_20',
         "breakout_20", "breakout_200",
         "support_20","support_200",
     ]
@@ -100,7 +98,7 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=50000,
+        iterations=20000,
         learning_rate=0.001,
         depth=6,
         early_stopping_rounds=5000,
@@ -109,11 +107,12 @@ def create_cbm(version=None):
         #決定模型什麼時候停，搭配early stopping
         eval_metric='NDCG:top=3',
 
-        #印出數據ㄋ
+        #印出數據
         custom_metric=['NDCG:top=3','PrecisionAt:top=3'],
         #每多少輪印進度
         verbose=200,
-        random_seed=42
+        random_seed=42,
+        thread_count=-1
     )
 
     print("開始訓練模型...")
@@ -134,4 +133,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v28')
+    create_cbm(version='v30')

@@ -1,4 +1,4 @@
-﻿# streamlit run c:/Users/Lynn610/Documents/kitsune_stock_system/dashboard/main.py
+# streamlit run c:/Users/Lynn610/Documents/kitsune_stock_system/dashboard/main.py
 """
 app_quant.py
 Kitsune Kernel — 主程式入口
@@ -9,12 +9,12 @@ Kitsune Kernel — 主程式入口
 import streamlit as st
 import pandas as pd
 
-from kitsune_quant.management.dashboard.engine import (
+from fund_stock.management.dashboard.engine import (
     load_data,
     calculate_settlement_data,
     generate_system_alerts,
 )
-from kitsune_quant.management.dashboard.pages import (
+from fund_stock.management.dashboard.pages import (
     page_fund_overview,
     page_fund_nav,
     page_fund_return,

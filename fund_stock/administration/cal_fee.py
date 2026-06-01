@@ -1,6 +1,6 @@
-﻿import os
+import os
 import pandas as pd
-from kitsune_quant.management.dashboard.engine import load_data, calculate_daily_history, FundSubscriber
+from fund_stock.management.dashboard.engine import load_data, calculate_daily_history, FundSubscriber
 import config
 from datetime import datetime
 
@@ -25,7 +25,7 @@ def run_fee_settlement(target_month):
         return
 
     # 3. 檢查是否已結算過，避免重複扣款
-    tx_path = config.kitsune_quant_ADMINISTRATION_DIR / 'transaction.csv'
+    tx_path = config.FUND_STOCK_ADMINISTRATION_DIR / 'transaction.csv'
     df_tx = pd.read_csv(tx_path)
 
     fee_name = f"{target_month} 手續費扣除"

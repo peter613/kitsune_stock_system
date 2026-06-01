@@ -1,4 +1,4 @@
-﻿"""
+"""
 pages.py
 Kitsune Kernel — 頁面渲染層
 職責：接收計算結果，負責所有 Streamlit / Plotly 渲染
@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
-from kitsune_quant.management.dashboard.engine import calculate_settlement_data
+from fund_stock.management.dashboard.engine import calculate_settlement_data
 
 # ══════════════════════════════════════════
 # 初始化繪圖格式

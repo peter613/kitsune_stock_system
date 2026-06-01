@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from datetime import datetime
 import time
 import subprocess
@@ -6,7 +6,7 @@ import os
 import config
 import questionary
 import shutil
-from kitsune_quant.management.dashboard.engine import load_data, calculate_settlement_data, generate_system_alerts
+from fund_stock.management.dashboard.engine import load_data, calculate_settlement_data, generate_system_alerts
 """"
 未來投組比例，etf投組 : 量化投組 : 現金 = 60% : 30% : 10%
 etf投組， 00731(高息低波) : 00919 : 0056 = 3 : 1 : 1
@@ -21,19 +21,19 @@ cash (id = cash, label = 隨意(wage/capital))
 """
 
 # 匯入模組
-from kitsune_quant.management.data.database.update_market import update_market_data
-from kitsune_quant.management.data.database.update_00631 import update_00631
-from kitsune_quant.management.data.database.update_0050 import update_0050
-from kitsune_quant.management.data.database.update_revenue import update_revenue
-from kitsune_quant.management.data.database.backup_database import backup
-from kitsune_quant.management.core.prediction import prediction
-from kitsune_quant.management.core.bt_simulator import backtester
-from kitsune_quant.management.core.bt_analysis import bt_analysis
-from kitsune_quant.management.data.cleaning.train import create_training
-from kitsune_quant.management.data.cleaning.pred import create_prediction
-from kitsune_quant.management.core.create_cbm import create_cbm
-from kitsune_quant.management.journal.update_journal import update_journal
-from kitsune_quant.administration.update_quant import update_quant
+from fund_stock.management.data.database.updater.market import update_market_data
+from fund_stock.management.data.database.updater.benchmark_00631 import update_00631
+from fund_stock.management.data.database.updater.benchmark_0050 import update_0050
+from fund_stock.management.data.database.updater.revenue import update_revenue
+from fund_stock.management.data.database.backup_database import backup
+from fund_stock.management.core.prediction import prediction
+from fund_stock.management.core.backtest.simulator import backtester
+from fund_stock.management.core.backtest.analysis import bt_analysis
+from fund_stock.management.data.cleaning.train import create_training
+from fund_stock.management.data.cleaning.pred import create_prediction
+from fund_stock.management.core.create_cbm import create_cbm
+from fund_stock.management.journal.update_journal import update_journal
+from fund_stock.administration.update_quant import update_quant
 
 # =================
 # 系統工具定義(指令)
@@ -60,10 +60,8 @@ def update_database(backfill_date: str = None) -> str:
     return f"\n\n資料庫已全面更新完畢。"
 
 def update_rev_database() -> str:
-    print(f"[1.] 營收爬蟲...")
+    print(f"營收爬蟲...")
     update_revenue()
-    print(f"[2.] 每月備份至supabase雲端資料庫(market & revenue)")
-    backup()
     return f"\n\n營收資料庫已全面更新完畢。"
 
 def open_dashboard_fund() -> str:
@@ -166,22 +164,22 @@ def type_effect(text, delay=0.023, end_new_line=True):
 
 def get_available_versions():
     if not os.path.exists(config.CBM_DIR): return []
-    files = os.listdir(config.CBM_DIR)
-    versions = [f.replace('strategy_', '').replace('.cbm', '') for f in files if f.startswith('strategy_') and f.endswith('.cbm')]
+    versions = [d for d in os.listdir(config.CBM_DIR)
+                if os.path.isdir(config.CBM_DIR / d) and d.startswith('v')]
     return sorted(versions)
 
 def main():
     print('')
-    type_effect(">> INITIALIZING KITSUNE KERNEL...")
+    type_effect(" >> INITIALIZING KITSUNE KERNEL...")
     time.sleep(0.3)
-    type_effect(">> WELCOME ARCHITECT")
+    type_effect(" >> WELCOME ARCHITECT")
     time.sleep(0.3)
     if alerts:
-        type_effect('>> RISK CONTROL : [ALERT]')
+        type_effect(' >> RISK CONTROL : [ALERT]')
         for msg in alerts:
             type_effect(f'>> {msg}')
     else:
-        type_effect('>> RISK CONTROL : [SAFE]')
+        type_effect(' >> RISK CONTROL : [SAFE]')
     time.sleep(0.3)
 
     while True:
@@ -208,6 +206,7 @@ def main():
                     "更新今日股票資料庫",
                     "回補股票資料庫",
                     "更新營收資料庫",
+                    "資料庫備份",
                     "返回主選單"
                 ],
                 qmark="",
@@ -229,6 +228,11 @@ def main():
             elif action_database == "更新營收資料庫":
                 print("\n[更新營收資料庫]")
                 res = update_rev_database()
+                print(f"{res}")
+
+            elif action_database == "資料庫備份":
+                print("\n[備份至supabase(market & revenue)]")
+                res = backup()
                 print(f"{res}")
 
         elif action_home == "量化模組":
@@ -295,7 +299,7 @@ def main():
             
             if action_dashboard != "返回主選單":
                 if datetime.now().weekday() < 5:
-                    print('為平日，暫停打開儀表板喔')
+                    print('\n為平日，暫停打開儀表板喔')
                 else:
                     if action_dashboard == "經理人儀表板":
                         print("\n[開啟經理人儀表板]")

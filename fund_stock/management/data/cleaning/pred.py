@@ -77,7 +77,7 @@ def create_prediction(stock_filter=True,amount_on=True):
     def clean_outliers(df, feature_cols):
         for col in feature_cols:
             if col in df.columns:
-                if col in ['mom', 'yoy', 'yoy_ma3', 'yoy_ma3_bias']:
+                if col in ['mom', 'yoy', 'yoy_ma5', 'yoy_ma5_bias']:
                     df[col] = df[col].clip(-100, 100)
                 else:
                     lower = df[col].quantile(0.01)
@@ -96,13 +96,13 @@ def create_prediction(stock_filter=True,amount_on=True):
         amount_ln = np.log1p(group['amount'].values.astype(float))
         
         # [優化 2] 處理法人可能存在的空值，避免 NaN 蔓延
-        vol_5 = SMA(volume, 5) * 5 + 1  # 加 1 避免分母為零
+        vol_10 = SMA(volume, 10) * 10 + 1  # 加 1 避免分母為零
         vol_3 = SMA(volume, 3) * 3 + 1
-        t_net_5 = SMA(group['Trust_Net'].values.astype(float), 5) * 5
+        t_net_10 = SMA(group['Trust_Net'].values.astype(float), 10) * 10
         t_net_3 = SMA(group['Trust_Net'].values.astype(float), 3) * 3
         
         #投信方向盤 (保留正負號，判斷是作帳還是結帳)
-        trust_in_5 = t_net_5 / vol_5
+        trust_in_10 = t_net_10 / vol_10
         trust_in_3 = t_net_3 / vol_3
 
         amount20 = SMA(amount_ln, 20)
@@ -136,7 +136,7 @@ def create_prediction(stock_filter=True,amount_on=True):
         # ── 字典一次性寫回 DataFrame ──────────────────────────────
         group = group.copy()          # 避免 SettingWithCopyWarning
         cols = {
-            'trust_in_5': trust_in_5,
+            'trust_in_10': trust_in_10,
             'trust_in_3': trust_in_3,
             'amount20': amount20,
             'amount_ema_20': amount_ema_20,
@@ -169,7 +169,7 @@ def create_prediction(stock_filter=True,amount_on=True):
 
     df_revenue["date"] = pd.to_datetime(df_revenue["date"])
     df_revenue = df_revenue.sort_values(['id', 'date'])
-    df_revenue['yoy_ma3'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(window=3).mean())
+    df_revenue['yoy_ma5'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(window=5).mean())
     df_revenue["merge_key"] = df_revenue["date"].dt.to_period("M").apply(lambda x: x + 1)
     df["merge_key"] = df["date"].dt.to_period("M")
 
@@ -179,15 +179,15 @@ def create_prediction(stock_filter=True,amount_on=True):
     print("正在執行主表與營收表合併...")
     df = pd.merge(
         df,
-        df_revenue[["id", "merge_key", "mom", "yoy", "yoy_ma3"]],
+        df_revenue[["id", "merge_key", "mom", "yoy", "yoy_ma5"]],
         on=["id", "merge_key"],
         how="left",
     )
 
     df["yoy"] = df.groupby("id")["yoy"].ffill()
     df["mom"] = df.groupby("id")["mom"].ffill()
-    df["yoy_ma3"] = df.groupby("id")["yoy_ma3"].ffill()
-    df['yoy_ma3_bias'] = df['yoy'] - df['yoy_ma3']
+    df["yoy_ma5"] = df.groupby("id")["yoy_ma5"].ffill()
+    df['yoy_ma5_bias'] = df['yoy'] - df['yoy_ma5']
 
     # [優化 4] 防禦機制：調降閾值以適應純科技股池
     date_counts = df["date"].value_counts()
@@ -221,17 +221,15 @@ def create_prediction(stock_filter=True,amount_on=True):
         # 均線與技術指標
         "sma20",  "sma200", "kama", "adx",
         
-        # 趨勢強度
-        "r_20_abs",
-        
+
         # 流動性 (Log化)
-        "amount20",'a_breakout_20',
+        "amount20",
         
         # 籌碼與法人動能
-        "trust_in_5", "trust_in_3",
+        "trust_in_10", "trust_in_3",
         
         # 基本面
-        "yoy_ma3_bias","yoy",
+        "yoy_ma5_bias","yoy",
 
         #突破與築底
         "breakout_20", "breakout_200",

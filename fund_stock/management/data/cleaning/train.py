@@ -86,6 +86,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         # ── 均線 ──────────────────────────────────────────────
         sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
         sma20  = close / (SMA(close, timeperiod=20)  + 1e-9)
+        #sma5  = close / (SMA(close, timeperiod=5)  + 1e-9)
 
         # ── 計算個股kama ──────────
         try:
@@ -103,8 +104,8 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         amount_ema_20 = EMA(amount_ln, 20)
 
         # ── 突破 / 支撐  (範圍 0~1)───────────────────────────────────────
-        # 成交值突破
-        amount_breakout_20  = amount / (SMA(amount,20) + 1e-9)
+        # 成交量突破
+        #amount_breakout_20  = amount / (SMA(amount,20) + 1e-9)
         # 價格突破 : 1代表在最高點
         breakout_20 = close / (MAX(close, timeperiod=20) + 1e-9)
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
@@ -113,16 +114,24 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
 
         # ── 法人籌碼 ──────────────────────────────────────────
-        vol_5   = SMA(volume, 5) * 5 + 1
         vol_3   = SMA(volume, 3) * 3 + 1
-        t_net_5 = SMA(trust_net,   5) * 5
+        vol_5   = SMA(volume, 5) * 5 + 1
+        vol_10   = SMA(volume, 10) * 10 + 1
         t_net_3 = SMA(trust_net,   3) * 3
-        f_net_5 = SMA(foreign_net, 5) * 5
-
+        t_net_5 = SMA(trust_net,   5) * 5
+        t_net_10 = SMA(trust_net,   10) * 10
         trust_in_5   = t_net_5 / vol_5
         trust_in_3   = t_net_3 / vol_3
-        #foreign_in_5 = f_net_5 / vol_5
-        #t_f_sync_5     = trust_in_5 * foreign_in_5
+        trust_in_10   = t_net_10 / vol_10
+
+        # 1. 計算 10 日標準差
+        f_std_10 = group['Foreign_Net'].rolling(window=10).std()
+
+        # 2. 計算 10 日均值的絕對值，並加上 1 防呆
+        f_mean_abs_10 = group['Foreign_Net'].rolling(window=10).mean().abs() + 1
+
+        # 3. 建立外資高熵指標 (數值越大 = 籌碼越混亂、雜訊越多)
+        f_entropy_10 = f_mean_abs_10 / f_std_10
 
         # ── 趨勢相關 ──────────────────────────────────────────
         time_idx = np.arange(len(close), dtype=float)
@@ -150,14 +159,14 @@ def create_training(version='v14', years_10=True, stock_filter=True):
             'adx'           : adx,
             'amount20'      : amount20,
             'amount_ema_20' : amount_ema_20,
-            'a_breakout_20' : amount_breakout_20,
             'breakout_20'   : breakout_20,
             'breakout_200'  : breakout_200,
             'support_20'    : support_20,
             'support_200'   : support_200,
-            'trust_in_5'    : trust_in_5,
             'trust_in_3'    : trust_in_3,
-            'r_20_abs'          : r_20_abs,
+            'trust_in_10'    : trust_in_10,
+            'f_entropy_10'  : f_entropy_10,
+            'r_20_abs'      : r_20_abs,
             'return_20d'    : return_20d,
         }
         for col, arr in cols.items():
@@ -181,20 +190,20 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     
     # 營收 YOY 均線
     df_revenue = df_revenue.sort_values(['id', 'date'])
-    df_revenue['yoy_ma3'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(5).mean())
+    df_revenue['yoy_ma5'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(window=5).mean())
     
     # 建立 Merge Key (遞延一個月對齊)
     df_revenue["merge_key"] = df_revenue["date"].dt.to_period("M").apply(lambda x: x + 1)
     df["merge_key"] = df["date"].dt.to_period("M")
 
     # 合併營收
-    df = pd.merge(df, df_revenue[["id", "merge_key", "mom", "yoy", "yoy_ma3"]], on=["id", "merge_key"], how="left")
+    df = pd.merge(df, df_revenue[["id", "merge_key", "mom", "yoy", "yoy_ma5"]], on=["id", "merge_key"], how="left")
 
     # 數值填補與市值對數化
-    for col in ["yoy", "mom", "yoy_ma3"]:
+    for col in ["yoy", "mom", "yoy_ma5"]:
         df[col] = df.groupby("id")[col].ffill()
         
-    df['yoy_ma3_bias'] = df['yoy'] - df['yoy_ma3']
+    df['yoy_ma5_bias'] = df['yoy'] - df['yoy_ma5']
     
     if years_10:
         df = df[df['date'] >= cutoff_date].copy()
@@ -210,7 +219,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
                                    left_on='target_date', right_on='actual_date', direction='forward')
     
     final_df = df[df['date'].isin(trade_dates_map['actual_date'].unique())].copy()
-    
+
     print("執行EMA成交值流動性過濾 (保留Top 1/3)...")
     final_df['liq_rank'] = final_df.groupby('date')['amount_ema_20'].rank(ascending=False, method='min')
     final_df['day_count'] = final_df.groupby('date')['id'].transform('count')
@@ -220,7 +229,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     # 7. 去極值與標籤排名 (Labeling)
     # ---------------------------------------------------------
     print("進行特徵淨化 (Clipping) 與標籤生成...")
-    growth_cols = ['mom', 'yoy', 'yoy_ma3', 'yoy_ma3_bias']
+    growth_cols = ['mom', 'yoy', 'yoy_ma5', 'yoy_ma5_bias']
     for col in growth_cols:
         final_df[col] = final_df[col].clip(lower=-100.0, upper=100.0)
 
@@ -237,4 +246,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v28', years_10=True, stock_filter=True)
+    create_training(version='v30', years_10=True, stock_filter=True)

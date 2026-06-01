@@ -83,7 +83,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
             continue
 
         # 使用回測後已覆寫的 simulated_return（若存在），否則用原始 return_20d
-        ret_col = 'simulated_return' if 'simulated_return' in top_picks.columns else 'return_20d'
+        ret_col = 'simulated_return' if 'simulated_return' in top_picks.columns else 'return_10d'
         monthly_avg = top_picks[ret_col].mean() * 100
 
         for idx_in_df, row in top_picks.iterrows():
@@ -120,13 +120,13 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     if select_rank is None:
         select_rank = list(range(1, 6))
 
-    MODEL_FILE   = config.CBM_DIR      / f"strategy_{version}.cbm"
+    MODEL_FILE   = config.get_version_dir(config.CBM_DIR, version) / "strategy.cbm"
     DATA_FILE    = config.FEATURES_DIR / f"train_{version}.csv"
 
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
-    AMOUNT_ON         = True  
+    AMOUNT_ON         = True
     AMOUNT_THRESHOLD  = 50000
 
     rank_str = ','.join(map(str, select_rank))
@@ -142,11 +142,6 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
 
     if AMOUNT_ON:
         test_df = test_df[test_df['amount'] > AMOUNT_THRESHOLD].reset_index(drop=True)
-    # if VOLUMN_ON:
-    #     test_df = test_df[
-    #         test_df.groupby('id')['volume']
-    #         .transform(lambda x: x.abs().rolling(window=5, min_periods=1).sum()) > VOLUMN_THRESHOLD
-    #     ].reset_index(drop=True)
 
     # ── 2. 模型評分 ──────────────────────────────────
     model = CatBoostRanker()
@@ -438,7 +433,8 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     ax1.grid(True, alpha=0.3)
     
     # 存檔 圖表 1
-    fig1_path = config.PLOTS_REPORT_DIR / f"nav_curve_rank_{rank_str.replace(',', '_')}_{version}.png"
+    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
+    fig1_path = plot_dir / f"nav_curve_rank_{rank_str.replace(',', '_')}.png"
     fig1.savefig(fig1_path, dpi=300, bbox_inches='tight')
 
     # 圖表 2：Rank 期望值長條圖
@@ -474,18 +470,18 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
         )
         
     # 存檔 圖表 2
-    fig2_path = config.PLOTS_REPORT_DIR / f"rank_expected_return_{version}.png"
+    fig2_path = plot_dir / "rank_expected_return.png"
     fig2.savefig(fig2_path, dpi=300, bbox_inches='tight')
 
-    print(f"圖表已存檔至: {config.PLOTS_REPORT_DIR}")
+    print(f"圖表已存檔至: {plot_dir}")
     print("圖表產生完畢，關閉視窗後程式繼續執行...")
     # plt.show()   # ← 唯一一次 show，會同時顯示 fig1 與 fig2，避免 tkinter mainloop 衝突
 
     # ──────────────────────────────────────────────
     # 8. 匯出交易日誌
     # ──────────────────────────────────────────────
-    LOG_DIR      = config.BACKTEST_TRADELOG_DIR
-    csv_filename = LOG_DIR / f"trade_log_rank_{rank_str.replace(',', '_')}_{version}.csv"
+    LOG_DIR      = config.get_version_dir(config.BACKTEST_TRADELOG_DIR, version)
+    csv_filename = LOG_DIR / f"trade_log_rank_{rank_str.replace(',', '_')}.csv"
     export_full_trade_log(
         test_df     = test_df,
         filename    = csv_filename,
@@ -498,4 +494,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
 
 if __name__ == "__main__":
     # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v27', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)
+    backtester(version='v30', select_rank=list(range(1, 4)), benchmark='0050.TW', entry_on_next_open=False)

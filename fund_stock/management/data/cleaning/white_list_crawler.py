@@ -59,6 +59,8 @@ if __name__ == "__main__":
 
     df_new = pd.DataFrame(final_data_list, columns=['id', 'name', 'market', 'industry'])
     df_new['id'] = df_new['id'].astype(str)
+    #去掉市場別
+    df_new = df_new[~(df_new['market']=='市場別')]
 
     file_path = config.WHITE_LIST_DIR / 'white_list.csv'
     if file_path.exists():

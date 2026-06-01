@@ -5,8 +5,8 @@ Kitsune Kernel — 投資者入口
 """
 
 import streamlit as st
-from kitsune_portfolio.dashboard.engine import load_data, load_subscribers
-from kitsune_portfolio.dashboard.pages import page_subscriber_nav, page_subscriber_performance
+from portfolio.dashboard.engine import load_data, load_subscribers
+from portfolio.dashboard.pages import page_subscriber_nav, page_subscriber_performance
 
 st.set_page_config(page_title="Kitsune Portfolio", layout="wide")
 

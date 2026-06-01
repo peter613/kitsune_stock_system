@@ -19,7 +19,8 @@ headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 REVENUE_FILE = config.DATABASE_DIR / 'revenue.csv'
-LOOKUP_FILE = config.LOOKUP_DIR / 'stock_lookup.csv'
+WHITE_LIST_FILE = config.WHITE_LIST_DIR / 'white_list.csv'
+
 
 # 自動計算前一個月的年份與月份
 # now = '2022-01-01'
@@ -123,30 +124,18 @@ def update_revenue():
         return
     new_data = pd.concat(dfs, ignore_index=True)
     new_data['id'] = new_data['id'].astype(str)
-    # -----------------------------------------
-    # 處理 1: 更新 stock_lookup.csv (處理新上市櫃股票)
-    # -----------------------------------------
-    new_lookup = new_data[['id', 'name', 'market_type']].drop_duplicates(subset=['id'])
-    
-    if os.path.exists(LOOKUP_FILE):
-        old_lookup = pd.read_csv(LOOKUP_FILE, dtype={'id': str})
-        all_lookup = pd.concat([old_lookup, new_lookup], ignore_index=True)
-    else:
-        all_lookup = new_lookup
-        
-    # 去重，保留最新抓到的名稱與市場狀態
-    all_lookup.drop_duplicates(subset=['id'], keep='last', inplace=True)
-    all_lookup.sort_values('id', inplace=True)
 
     # -----------------------------------------
-    # 處理 2: 更新 revenue.csv (純淨長表)
+    # 更新 revenue.csv (純淨長表)
     # -----------------------------------------
     new_revenue = new_data[['date', 'id', 'month_revenue', 'yoy', 'mom']]
     
     if os.path.exists(REVENUE_FILE):
-        print(f"讀取現有資料庫: {REVENUE_FILE}")
+        print(f"讀取營收資料庫: {REVENUE_FILE}")
+        print(f'讀取白名單: {WHITE_LIST_FILE}')
         old_revenue = pd.read_csv(REVENUE_FILE, dtype={'id': str})
         old_revenue['date'] = pd.to_datetime(old_revenue['date'])
+        white_list_data = pd.read_csv(WHITE_LIST_FILE, dtype={'id': str})
     else:
         print("建立新營收資料庫...")
         old_revenue = pd.DataFrame()
@@ -160,15 +149,17 @@ def update_revenue():
 
     last_date = old_revenue['date'].max()
     last_month_count = len(old_revenue[old_revenue['date'] == last_date])
+    white_list_exsist = white_list_data[~(white_list_data['market']=='下市櫃')]
+    white_list_revenue = new_revenue[new_revenue['id'].isin(white_list_exsist['id'])]
+    print(f'\n白名單 : {len(white_list_revenue)}/{len(white_list_exsist)}筆')
     print(f"本次新增 {len(new_revenue)} 筆 (上個月筆數: {last_month_count})")
-    print(f"\n預計更新後營收總筆數: {len(all_revenue)}")
-    print(f"預計更新後股票總檔數: {len(all_lookup)}")
+    print(f"預計更新後營收總筆數: {len(all_revenue)}")
+
     user_input = input('確認資料無誤？ [按 Y 存檔 / 其他鍵取消]: ').strip().lower()
     
     if user_input == 'y':
-        all_lookup.to_csv(LOOKUP_FILE, index=False, encoding='utf-8-sig')
         all_revenue.to_csv(REVENUE_FILE, index=False, encoding='utf-8-sig')
-        print("雙檔案(revenue+lookup)存檔完成。")
+        print("revenue.csv存檔完成。")
     else:
         print("操作已取消。")
 if __name__ == "__main__":
