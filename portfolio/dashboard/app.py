@@ -88,7 +88,7 @@ def main():
 
     subscribers = load_subscribers(df_flows)
     if not subscribers:
-        st.error("transaction_quant.csv 中找不到任何認購者，請確認 subscriber 欄位。")
+        st.error("transaction.csv 中找不到任何認購者，請確認 subscriber 欄位。")
         return
 
     with st.sidebar:

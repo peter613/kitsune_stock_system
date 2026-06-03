@@ -62,7 +62,7 @@ if __name__ == "__main__":
     #去掉市場別
     df_new = df_new[~(df_new['market']=='市場別')]
 
-    file_path = config.WHITE_LIST_DIR / 'white_list.csv'
+    file_path = config.STOCK_WHITE_LIST_DIR / 'white_list.csv'
     if file_path.exists():
         # 讀取舊資料
         df_old = pd.read_csv(file_path, dtype={'id': str})

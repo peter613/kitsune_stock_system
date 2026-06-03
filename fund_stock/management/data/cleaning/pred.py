@@ -9,9 +9,9 @@ from scipy.stats import entropy
 # --- 設定區 ---
 def create_prediction(stock_filter=True,amount_on=True):
     # 1. 檔案路徑更新
-    file_name = config.DATABASE_DIR / 'market.parquet'
-    file_name_revenue = config.DATABASE_DIR / 'revenue.csv'
-    file_save_name = config.FEATURES_DIR / f'pred.csv'
+    file_name = config.MARKET_DATA_DIR / 'market.parquet'
+    file_name_revenue = config.MARKET_DATA_DIR / 'revenue.csv'
+    file_save_name = config.STOCK_FEATURES_DIR / f'pred.csv'
 
     print("正在讀取資料庫...")
     # 2. 讀取邏輯更新：使用 read_parquet，並在讀取 revenue 時鎖定型態
@@ -51,7 +51,7 @@ def create_prediction(stock_filter=True,amount_on=True):
         # ---------------------------------------------------------
         # 白名單
         # ---------------------------------------------------------
-        get_white_list = pd.read_csv(config.WHITE_LIST_DIR / 'white_list.csv', encoding='utf-8-sig')
+        get_white_list = pd.read_csv(config.STOCK_WHITE_LIST_DIR / 'white_list.csv', encoding='utf-8-sig')
         white_ids = get_white_list['id'].astype(str)
 
         df = df[df['id'].isin(white_ids)].copy()

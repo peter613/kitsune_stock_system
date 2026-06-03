@@ -1,4 +1,4 @@
-﻿"""
+"""
 engine_quant.py
 Kitsune Kernel — 基金管理引擎
 職責：資料讀取、資產結算、風控警報
@@ -28,8 +28,8 @@ import config
 # ──────────────────────────────────────────
 @st.cache_data
 def load_data():
-    file_path_journal     = config.JOURNAL_DIR / "journal_quant.csv"
-    file_path_transaction = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
+    file_path_journal     = config.STOCK_JOURNAL_DIR / "journal.csv"
+    file_path_transaction = config.FUND_STOCK_ADMINISTRATION_DIR / "transaction.csv"
 
     # ── 股票交易紀錄（journal.csv）──
     df_record = pd.read_csv(file_path_journal, dtype={'id': str})
@@ -54,7 +54,7 @@ def load_data():
             df = df.rename(columns={'price': 'close'})
         return df
 
-    market_path = config.DATABASE_DIR / "market.parquet"
+    market_path = config.MARKET_DATA_DIR / "market.parquet"
     if os.path.exists(market_path):
         df_price = pd.read_parquet(market_path)
         df_price = _standardize(df_price)
@@ -68,12 +68,12 @@ def load_data():
         market_ids = set(df_price['id'].unique())
         orphan_ids = record_ids - market_ids
         if orphan_ids:
-            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal_quant.csv。")
+            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal.csv。")
 
     _validate_ids(df_record, df_price)
 
     def _load_bench(name):
-        path = config.DATABASE_DIR / name
+        path = config.MARKET_DATA_DIR / name
         if not os.path.exists(path):
             return pd.DataFrame()
         df = pd.read_csv(path, dtype={'id': str})

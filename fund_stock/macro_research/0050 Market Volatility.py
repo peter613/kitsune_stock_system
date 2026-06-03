@@ -9,7 +9,7 @@ import config
 
 # 1. 取得資料
 try:
-    df_0050 = pd.read_csv(config.DATABASE_DIR / '0050.csv')
+    df_0050 = pd.read_csv(config.MARKET_DATA_DIR / '0050.csv')
     df_0050['date'] = pd.to_datetime(df_0050['date'])
     df_0050 = df_0050.sort_values('date').set_index('date')
     price_col = 'close'

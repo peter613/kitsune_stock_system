@@ -120,8 +120,8 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     if select_rank is None:
         select_rank = list(range(1, 6))
 
-    MODEL_FILE   = config.get_version_dir(config.CBM_DIR, version) / "strategy.cbm"
-    DATA_FILE    = config.FEATURES_DIR / f"train_{version}.csv"
+    MODEL_FILE   = config.get_version_dir(config.STOCK_CBM_DIR, version) / "strategy.cbm"
+    DATA_FILE    = config.STOCK_FEATURES_DIR / f"train_{version}.csv"
 
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
@@ -156,7 +156,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     test_df['simulated_return'] = np.nan
 
     # ── 3. 市場日頻資料 ──────────────────────────────
-    market_df = pd.read_parquet(config.DATABASE_DIR / "market.parquet")
+    market_df = pd.read_parquet(config.MARKET_DATA_DIR / "market.parquet")
     market_df['date'] = pd.to_datetime(market_df['date'])
     market_df['id']   = market_df['id'].astype(str)
     market_df = market_df.sort_values(['id', 'date']).set_index(['id', 'date'])
@@ -433,7 +433,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     ax1.grid(True, alpha=0.3)
     
     # 存檔 圖表 1
-    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
+    plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
     fig1_path = plot_dir / f"nav_curve_rank_{rank_str.replace(',', '_')}.png"
     fig1.savefig(fig1_path, dpi=300, bbox_inches='tight')
 
@@ -480,7 +480,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     # ──────────────────────────────────────────────
     # 8. 匯出交易日誌
     # ──────────────────────────────────────────────
-    LOG_DIR      = config.get_version_dir(config.BACKTEST_TRADELOG_DIR, version)
+    LOG_DIR      = config.get_version_dir(config.STOCK_BACKTEST_TRADELOG_DIR, version)
     csv_filename = LOG_DIR / f"trade_log_rank_{rank_str.replace(',', '_')}.csv"
     export_full_trade_log(
         test_df     = test_df,

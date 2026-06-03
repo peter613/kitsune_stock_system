@@ -18,8 +18,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
-REVENUE_FILE = config.DATABASE_DIR / 'revenue.csv'
-WHITE_LIST_FILE = config.WHITE_LIST_DIR / 'white_list.csv'
+REVENUE_FILE = config.MARKET_DATA_DIR / 'revenue.csv'
+WHITE_LIST_FILE = config.STOCK_WHITE_LIST_DIR / 'white_list.csv'
 
 
 # 自動計算前一個月的年份與月份

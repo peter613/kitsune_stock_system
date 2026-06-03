@@ -44,7 +44,7 @@ def cloud_has_data(bucket_name: str) -> bool:
 
 def backup():
     current_year = datetime.now().year
-    df = pd.read_parquet(f"{config.DATABASE_DIR}/market.parquet")
+    df = pd.read_parquet(f"{config.MARKET_DATA_DIR}/market.parquet")
     df['year'] = df['date'].dt.year
 
     initialized = cloud_has_data('stock_data_backup')
@@ -59,7 +59,7 @@ def backup():
 
     for year, group in df.groupby('year'):
         if year in years_to_upload:
-            temp_file = f"{config.DATABASE_DIR}/market_{year}.parquet"
+            temp_file = f"{config.MARKET_DATA_DIR}/market_{year}.parquet"
             group.drop(columns=['year']).to_parquet(temp_file)
             response = backup_to_supabase(
                 'stock_data_backup',
@@ -70,9 +70,9 @@ def backup():
             os.remove(temp_file)
 
     for local, remote in [
-        (f"{config.DATABASE_DIR}/revenue.csv",                                    "revenue/revenue.csv"),
-        (f"{config.JOURNAL_DIR}/journal_quant.csv",                               "trading_record/trading_record.csv"),
-        (f"{config.KITSUNE_QUANT_ADMINISTRATION_DIR}/transaction_quant.csv",      "transaction/transaction.csv"),
+        (f"{config.MARKET_DATA_DIR}/revenue.csv",                                 "revenue/revenue.csv"),
+        (f"{config.STOCK_JOURNAL_DIR}/journal.csv",                                  "trading_record/trading_record.csv"),
+        (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/transaction.csv",            "transaction/transaction.csv"),
     ]:
         responses.append(backup_to_supabase('stock_data_backup', local, remote))
 

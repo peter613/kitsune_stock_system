@@ -1,7 +1,7 @@
-﻿"""
+"""
 update_fund_ledger.py
 職責：
-  1. 計算每日基金帳務 → 輸出 navpu_quant.csv
+  1. 計算每日基金帳務 → 輸出 navpu.csv
   2. 回填 transaction.csv 的空白欄位
      - share 空白 → share = price / nav_per_unit
      - price 空白 → price = share * nav_per_unit
@@ -45,8 +45,8 @@ def _sell_proceeds(price: float, share: float, stock_id: str) -> float:
 def _load_raw_data():
     # journal.csv
 
-    # journal_quant.csv
-    journal_path = config.JOURNAL_DIR / "journal_quant.csv"
+    # journal.csv
+    journal_path = config.STOCK_JOURNAL_DIR / "journal.csv"
     if not os.path.exists(journal_path):
         df_record = pd.DataFrame(columns=['date', 'id', 'price', 'share'])
         df_record.to_csv(journal_path, index=False, encoding='utf-8-sig')
@@ -57,8 +57,8 @@ def _load_raw_data():
     df_record['price'] = pd.to_numeric(df_record['price'], errors='coerce').fillna(0)
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
 
-    # transaction_quant.csv
-    transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
+    # transaction.csv
+    transaction_path = config.FUND_STOCK_ADMINISTRATION_DIR / "transaction.csv"
     if not os.path.exists(transaction_path):
         df_flows = pd.DataFrame(columns=['date', 'id', 'action', 'price', 'share'])
         df_flows.to_csv(transaction_path, index=False, encoding='utf-8-sig')
@@ -69,7 +69,7 @@ def _load_raw_data():
     df_flows['share'] = pd.to_numeric(df_flows['share'], errors='coerce')  # 保留 NaN
 
     # market.parquet
-    market_path = config.DATABASE_DIR / "market.parquet"
+    market_path = config.MARKET_DATA_DIR / "market.parquet"
     if os.path.exists(market_path):
         df_price = pd.read_parquet(market_path)
         df_price.columns = df_price.columns.str.strip().str.lower()
@@ -217,15 +217,15 @@ def update_quant():
         print("警告：計算結果為空，檔案未更新。")
         return
 
-    # 輸出 1：navpu_quant.csv
-    nav_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv"
+    # 輸出 1：navpu.csv
+    nav_path = config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv"
     nav_path.parent.mkdir(parents=True, exist_ok=True)
     df_nav.to_csv(nav_path, index=False,encoding='utf-8-sig')
     print(f'基金帳務更新完成，目前總筆數 {len(df_nav)} 筆')
     print(f"現淨值(NAV) {df_nav['nav_per_unit'].iloc[-1]:.4f}")
 
     # 輸出 2：回填 transaction.csv
-    transaction_path = config.KITSUNE_QUANT_ADMINISTRATION_DIR / "transaction_quant.csv"
+    transaction_path = config.FUND_STOCK_ADMINISTRATION_DIR / "transaction.csv"
     _backfill_transaction(df_flows, df_nav, transaction_path)
 
 

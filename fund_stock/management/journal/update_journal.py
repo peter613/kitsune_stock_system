@@ -3,7 +3,7 @@ import os
 import config
 from datetime import datetime
 
-data_path = config.JOURNAL_DIR / "journal_quant.csv"
+data_path = config.STOCK_JOURNAL_DIR / "journal.csv"
 
 def update_journal(id, name, action, label, price, share, date=None):
     if date == None:

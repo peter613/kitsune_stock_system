@@ -25,7 +25,7 @@ def plot_shap_values(model,test_pool,test_df,X_col,version):
 
     #繪圖: SHAP 柱狀圖
     print("繪製 SHAP 柱狀圖...")
-    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
+    plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
     shap.plots.bar(shap_obj,max_display=15, show=False)
     plt.savefig(plot_dir / 'shap_bar.png', bbox_inches='tight')
 
@@ -40,8 +40,8 @@ def plot_shap_values(model,test_pool,test_df,X_col,version):
 def create_cbm(version=None):
     # 1. 設定路徑
 
-    cbm_version_dir = config.get_version_dir(config.CBM_DIR, version)
-    data_path = config.FEATURES_DIR / f"train_{version}.csv"
+    cbm_version_dir = config.get_version_dir(config.STOCK_CBM_DIR, version)
+    data_path = config.STOCK_FEATURES_DIR / f"train_{version}.csv"
     model_save_path = cbm_version_dir / "strategy.cbm"
     feature_save_path_json = cbm_version_dir / "feature_names.json"
 

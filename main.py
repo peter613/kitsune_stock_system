@@ -21,10 +21,10 @@ cash (id = cash, label = 隨意(wage/capital))
 """
 
 # 匯入模組
-from fund_stock.management.data.database.updater.market import update_market_data
-from fund_stock.management.data.database.updater.benchmark_00631 import update_00631
-from fund_stock.management.data.database.updater.benchmark_0050 import update_0050
-from fund_stock.management.data.database.updater.revenue import update_revenue
+from market_data.updater.market import update_market_data
+from market_data.updater.benchmark_00631 import update_00631
+from market_data.updater.benchmark_0050 import update_0050
+from market_data.updater.revenue import update_revenue
 from fund_stock.management.data.database.backup_database import backup
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
@@ -33,7 +33,7 @@ from fund_stock.management.data.cleaning.train import create_training
 from fund_stock.management.data.cleaning.pred import create_prediction
 from fund_stock.management.core.create_cbm import create_cbm
 from fund_stock.management.journal.update_journal import update_journal
-from fund_stock.administration.update_quant import update_quant
+from fund_stock.administration.update_navpu import update_quant
 
 # =================
 # 系統工具定義(指令)
@@ -75,7 +75,7 @@ def open_dashboard_fund() -> str:
         f'start /D "{target_path}" cmd /k '
         f'"set PYTHONPATH=. && '
         f'venv\\Scripts\\activate && '
-        f'streamlit run {config.DASHBOARD_QUANT_DIR}/app.py --server.port 8501"'
+        f'streamlit run {config.STOCK_DASHBOARD_DIR}/app.py --server.port 8501"'
     )
         
     subprocess.Popen(cmd, shell=True)
@@ -298,23 +298,21 @@ def main():
             ).ask()
             
             if action_dashboard != "返回主選單":
-                if datetime.now().weekday() < 5:
+                SANDBOX_MODE = True
+
+                if not SANDBOX_MODE and datetime.now().weekday() < 5:
                     print('\n為平日，暫停打開儀表板喔')
                 else:
                     if action_dashboard == "經理人儀表板":
                         print("\n[開啟經理人儀表板]")
-                        res = open_dashboard_fund() 
-                        print(f"{res}")
+                        print(f"{open_dashboard_fund()}")
                     elif action_dashboard == "投資人儀表板":
                         print("\n[開啟投資者儀表板]")
-                        res = open_dashboard_port() 
-                        print(f"{res}")
+                        print(f"{open_dashboard_port()}")
                     elif action_dashboard == "全部儀表板":
                         print("\n[開啟所有儀表板]")
-                        res_f = open_dashboard_fund() 
-                        res_p = open_dashboard_port() 
-                        print(f"{res_f}")
-                        print(f"{res_p}")
+                        print(f"{open_dashboard_fund()}")
+                        print(f"{open_dashboard_port()}")
 
         elif action_home == "清除畫面":
             os.system('cls')

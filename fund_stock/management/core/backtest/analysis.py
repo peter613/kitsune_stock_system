@@ -128,7 +128,7 @@ def plot_distribution(port_returns, top_n=5, version='v27'):
     plt.tight_layout()
     
     # 存檔
-    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
+    plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
     plot_file = plot_dir / f"distribution_analysis_top{top_n}.png"
     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     print(f"柱狀圖已存檔: {plot_file}")
@@ -207,7 +207,7 @@ def plot_score_distribution(test_df, version='v27', top_n=3):
     plt.tight_layout()
     
     # 6. 存檔與清理
-    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
+    plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
     plot_file = plot_dir / f"score_distribution_top{top_n}.png"
     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     plt.close()
@@ -215,7 +215,7 @@ def plot_score_distribution(test_df, version='v27', top_n=3):
     print(f"分數柱狀圖已存檔: {plot_file}")
 
 def bt_analysis(version='v27', top_n=3):
-    file_path = config.get_version_dir(config.BACKTEST_TRADELOG_DIR, version) / "trade_log_rank_1_2_3.csv"
+    file_path = config.get_version_dir(config.STOCK_BACKTEST_TRADELOG_DIR, version) / "trade_log_rank_1_2_3.csv"
     test_df = pd.read_csv(file_path, encoding='utf-8-sig')
     rank_skewness(test_df, top_n=top_n)
     port_returns, mean_ret, std_ret, skewness_value = portfolio_skewness(test_df, top_n=top_n, version=version)

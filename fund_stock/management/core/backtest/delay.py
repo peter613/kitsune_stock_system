@@ -92,7 +92,7 @@ def plot_delay_comparison(results: list[dict], version: str = ''):
 
     ax1l.legend([bars, line_wr], ['月均期望值 %', '月勝率 %'], loc='upper right', fontsize=8, framealpha=0.7)
     fig1.tight_layout()
-    plot_dir = config.get_version_dir(config.PLOTS_DIR, version)
+    plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
     path1 = plot_dir / 'delay_profit.png'
     fig1.savefig(path1, dpi=150, bbox_inches='tight')
     plt.show()
@@ -169,8 +169,8 @@ def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0
     if select_rank is None:
         select_rank = list(range(1, 6))
 
-    MODEL_FILE   = config.get_version_dir(config.CBM_DIR, version) / "strategy.cbm"
-    DATA_FILE    = config.FEATURES_DIR / f"train_{version}.csv"
+    MODEL_FILE   = config.get_version_dir(config.STOCK_CBM_DIR, version) / "strategy.cbm"
+    DATA_FILE    = config.STOCK_FEATURES_DIR / f"train_{version}.csv"
 
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005
@@ -203,7 +203,7 @@ def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0
     test_df['simulated_return'] = np.nan
 
     # ── 3. 市場日頻資料 ──────────────────────────────
-    market_df = pd.read_parquet(config.DATABASE_DIR / "market.parquet")
+    market_df = pd.read_parquet(config.MARKET_DATA_DIR / "market.parquet")
     market_df['date'] = pd.to_datetime(market_df['date'])
     market_df['id']   = market_df['id'].astype(str)
     market_df = market_df.sort_values(['id', 'date']).set_index(['id', 'date'])

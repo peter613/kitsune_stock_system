@@ -117,7 +117,7 @@ def load_nav_history():
     roi_total, roi_0050, roi_00631L, dd_pct, total_units, total_nav, cash
     """
     # ── 基金 NAV ──
-    df_nav = pd.read_csv(config.KITSUNE_QUANT_ADMINISTRATION_DIR / "navpu_quant.csv")
+    df_nav = pd.read_csv(config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv")
     df_nav['date'] = pd.to_datetime(df_nav['date']).dt.normalize()
     df_nav = df_nav.sort_values('date').reset_index(drop=True)
 
@@ -130,7 +130,7 @@ def load_nav_history():
 
     # ── Benchmark ──
     def _load_bench(filename):
-        path = config.DATABASE_DIR / filename
+        path = config.MARKET_DATA_DIR / filename
         df = pd.read_csv(path)
         df.columns = df.columns.str.strip().str.lower()
         df['date'] = pd.to_datetime(df['date']).dt.normalize()

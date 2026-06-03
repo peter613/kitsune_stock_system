@@ -12,7 +12,7 @@ import io
 import lxml
 session = requests.Session()
 # 設定檔案路徑
-FILE_NAME = config.DATABASE_DIR/'market.parquet'
+FILE_NAME = config.MARKET_DATA_DIR/'market.parquet'
 
 HEADERS_TWSE= {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

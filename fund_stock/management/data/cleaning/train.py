@@ -8,7 +8,7 @@ import gc
 import config
 
 def create_training(version='v14', years_10=True, stock_filter=True):
-    file_save_name = config.FEATURES_DIR / f'train_{version}.csv'
+    file_save_name = config.STOCK_FEATURES_DIR / f'train_{version}.csv'
 
     # ---------------------------------------------------------
     # 1. 讀取資料與預處理
@@ -16,10 +16,10 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print("正在載入資料庫並執行型態淨化...")
     
     # Market 資料 (Parquet 格式)
-    df = pd.read_parquet(config.DATABASE_DIR / 'market.parquet')
+    df = pd.read_parquet(config.MARKET_DATA_DIR / 'market.parquet')
     
     # Revenue 與 Capital (CSV 格式，讀取時即指定型態防錯)
-    df_revenue = pd.read_csv(config.DATABASE_DIR / 'revenue.csv', encoding='utf-8', dtype={'id': str})
+    df_revenue = pd.read_csv(config.MARKET_DATA_DIR / 'revenue.csv', encoding='utf-8', dtype={'id': str})
 
 
     # 強制執行時間格式化 (解決 .dt 報錯)
@@ -39,7 +39,7 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         # ---------------------------------------------------------
         # 白名單
         # ---------------------------------------------------------
-        get_white_list = pd.read_csv(config.WHITE_LIST_DIR / 'white_list.csv', encoding='utf-8-sig')
+        get_white_list = pd.read_csv(config.STOCK_WHITE_LIST_DIR / 'white_list.csv', encoding='utf-8-sig')
         white_ids = get_white_list['id'].astype(str)
 
         df = df[df['id'].isin(white_ids)].copy()

@@ -11,8 +11,8 @@ def search_stock(stock_name: str, version='v20') -> str:
     例如: search_stock('台光電') 會告訴你他的排名和排名多少
     """
     # 1. 設定與載入
-    MODEL_FILE = config.get_version_dir(config.CBM_DIR, version)/"strategy.cbm"
-    DATA_FILE = config.FEATURES_DIR/"pred.csv"
+    MODEL_FILE = config.get_version_dir(config.STOCK_CBM_DIR, version)/"strategy.cbm"
+    DATA_FILE = config.STOCK_FEATURES_DIR/"pred.csv"
     
     if not os.path.exists(MODEL_FILE):
         return f"❌ 錯誤：找不到模型檔案 {MODEL_FILE}"
@@ -90,8 +90,8 @@ def search_stock(stock_name: str, version='v20') -> str:
 
 def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型別提示
     # 1. 設定與載入
-    MODEL_FILE = config.get_version_dir(config.CBM_DIR, version)/"strategy.cbm"
-    DATA_FILE = config.FEATURES_DIR/"pred.csv"
+    MODEL_FILE = config.get_version_dir(config.STOCK_CBM_DIR, version)/"strategy.cbm"
+    DATA_FILE = config.STOCK_FEATURES_DIR/"pred.csv"
     
     print(f"正在載入模型: {MODEL_FILE}")
     if not os.path.exists(MODEL_FILE):
@@ -172,7 +172,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
     # 4. 存檔
     top_picks = target_df[target_df['rank'].isin(select_ranks)].copy()
-    prediction_dir = config.get_version_dir(config.PREDICTION_REPORT_DIR, version)
+    prediction_dir = config.get_version_dir(config.STOCK_PREDICTION_REPORT_DIR, version)
     file_name = f'{datetime.now().strftime("%Y-%m-%d")}.csv'
     output_dir = prediction_dir / file_name
     
