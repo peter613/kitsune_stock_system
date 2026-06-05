@@ -1,12 +1,12 @@
 """
-engine_quant.py
-Kitsune Kernel — 基金管理引擎
-職責：資料讀取、資產結算、風控警報
-供應：app_quant.py
+engine.py
+ETF 基金管理引擎
+職責：資料讀取、資產結算
+供應：app.py
 
 journal.csv 格式規範（fund flows）：
-  買股：id=股票代號, action=buy,   price=股價,          share=股數
-  賣股：id=股票代號, action=sell,  price=股價,          share=股數
+  買入：id=ETF代號, action=buy,   price=成交價, share=股數
+  賣出：id=ETF代號, action=sell,  price=成交價, share=股數
 
 transaction.csv 格式規範（fund subscription/redemption）：
   申購： action=subscribe, price=申購金額(TWD), share=空白
@@ -15,13 +15,51 @@ transaction.csv 格式規範（fund subscription/redemption）：
 # ────────
 # setting
 # ────────
-START_DATE = '2026-03-10'
+START_DATE = None  # 尚未啟用，啟用後設定起始日如 '2026-07-01'
 
 import os
 import numpy as np
 import pandas as pd
 import streamlit as st
 import config
+
+# ── ETF 交易稅率 ──
+ETF_TAX_RATE = 0.001  # ETF 優惠稅率 0.1%
+
+
+# ──────────────────────────────────────────
+# 輔助：從 etf.csv 寬表讀取報價 → 長表
+# ──────────────────────────────────────────
+def _load_etf_prices():
+    """
+    讀取 etf.csv (寬表)，轉為長表格式 (date, id, close)，
+    供 engine 和 settlement 使用。
+    """
+    etf_path = config.MARKET_DATA_DIR / "etf.csv"
+    if not os.path.exists(etf_path):
+        return pd.DataFrame(columns=['date', 'id', 'close'])
+
+    df_wide = pd.read_csv(etf_path)
+    df_wide.columns = df_wide.columns.str.strip()
+    df_wide['date'] = pd.to_datetime(df_wide['date'], errors='coerce').dt.normalize()
+
+    # 寬表 → 長表 (melt)
+    etf_cols = [c for c in df_wide.columns if c != 'date']
+    df_long = df_wide.melt(
+        id_vars=['date'],
+        value_vars=etf_cols,
+        var_name='id',
+        value_name='close'
+    )
+    df_long['close'] = pd.to_numeric(df_long['close'], errors='coerce')
+    df_long = df_long.dropna(subset=['close'])
+    df_long = df_long.sort_values(['id', 'date']).reset_index(drop=True)
+
+    if START_DATE:
+        df_long = df_long[df_long['date'] >= START_DATE].copy()
+
+    return df_long
+
 
 # ──────────────────────────────────────────
 # 模組 1：資料讀取
@@ -31,12 +69,13 @@ def load_data():
     file_path_journal     = config.ETF_JOURNAL_DIR / "journal.csv"
     file_path_transaction = config.FUND_ETF_ADMINISTRATION_DIR / "transaction.csv"
 
-    # ── 股票交易紀錄（journal.csv）──
+    # ── ETF 交易紀錄（journal.csv）──
     df_record = pd.read_csv(file_path_journal, dtype={'id': str})
     df_record.columns  = df_record.columns.str.strip().str.lower()
     df_record['label'] = df_record['label'].str.strip().str.lower()
     df_record['date']  = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
-    df_record = df_record[df_record['date'] >= START_DATE].copy()
+    if START_DATE:
+        df_record = df_record[df_record['date'] >= START_DATE].copy()
     df_record['price'] = pd.to_numeric(df_record['price'], errors='coerce').fillna(0)
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
 
@@ -44,57 +83,46 @@ def load_data():
     df_flows = pd.read_csv(file_path_transaction, dtype={'id': str}, encoding='utf-8-sig')
     df_flows.columns = df_flows.columns.str.strip().str.lower()
     df_flows['date']  = pd.to_datetime(df_flows['date'], errors='coerce').dt.normalize()
-    df_flows = df_flows[df_flows['date'] >= START_DATE].copy()
+    if START_DATE:
+        df_flows = df_flows[df_flows['date'] >= START_DATE].copy()
     df_flows['price'] = pd.to_numeric(df_flows['price'], errors='coerce').fillna(0)
     df_flows['share'] = pd.to_numeric(df_flows['share'], errors='coerce').fillna(0)
 
-    def _standardize(df):
-        df.columns = df.columns.str.strip().str.lower()
-        if 'price' in df.columns and 'close' not in df.columns:
-            df = df.rename(columns={'price': 'close'})
-        return df
+    # ── ETF 報價
+    df_price = _load_etf_prices()
 
-    market_path = config.MARKET_DATA_DIR / "market.parquet"
-    if os.path.exists(market_path):
-        df_price = pd.read_parquet(market_path)
-        df_price = _standardize(df_price)
-        df_price['date'] = pd.to_datetime(df_price['date'], errors='coerce').dt.normalize()
-        df_price = df_price[df_price['date'] >= START_DATE].copy()
-    else:
-        df_price = pd.DataFrame(columns=['date', 'id', 'close'])
-
-    def _validate_ids(df_record, df_price):
-        record_ids = set(df_record['id'].unique())
-        market_ids = set(df_price['id'].unique())
-        orphan_ids = record_ids - market_ids
-        if orphan_ids:
-            st.error(f"偵測到無效代號：{orphan_ids}。請檢查 journal.csv。")
-
-    _validate_ids(df_record, df_price)
-
-    def _load_bench(name):
-        path = config.MARKET_DATA_DIR / name
-        if not os.path.exists(path):
+    # ── Benchmark（從同一張 etf.csv 篩選）──
+    def _load_bench(ticker):
+        """從寬表 etf.csv 讀取指定 ETF 的收盤價"""
+        etf_path = config.MARKET_DATA_DIR / "etf.csv"
+        if not os.path.exists(etf_path):
             return pd.DataFrame()
-        df = pd.read_csv(path, dtype={'id': str})
-        df = _standardize(df)
+        df_etf = pd.read_csv(etf_path)
+        df_etf.columns = df_etf.columns.str.strip()
+        if ticker not in df_etf.columns:
+            return pd.DataFrame()
+        df = df_etf[['date', ticker]].rename(columns={ticker: 'close'}).copy()
         df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
+        df['close'] = pd.to_numeric(df['close'], errors='coerce')
+        df = df.dropna(subset=['close'])
         df['daily_return'] = df['close'].pct_change()
         df['realized_vol'] = df['daily_return'].rolling(window=20).std() * (252 ** 0.5)
-        return df[df['date'] >= START_DATE].copy()
+        if START_DATE:
+            df = df[df['date'] >= START_DATE].copy()
+        return df
 
-    df_0050   = _load_bench("0050.csv")
-    df_00631L = _load_bench("00631.csv")
+    df_0050   = _load_bench("0050")
+    df_00631L = _load_bench("00631L")
 
     return df_record, df_flows, df_price, df_0050, df_00631L
 
 
 # ──────────────────────────────────────────
-# 內部輔助：手續費 / 稅計算
+# 內部輔助：手續費 / 稅計算 (ETF 優惠稅率)
 # ──────────────────────────────────────────
 def _tax_rate(stock_id: str) -> float:
-    """個股 0.3%"""
-    return 0.003
+    """ETF 交易稅 0.1%"""
+    return ETF_TAX_RATE
 
 
 def _buy_cost(price: float, share: float, stock_id: str) -> float:
@@ -125,7 +153,6 @@ def calculate_settlement_data(df_record, df_price):
         sub        = df_trade[df_trade['id'] == aid].sort_values('date')
         stock_name = sub['name'].iloc[0] if 'name' in sub.columns else ""
         tax_rate   = _tax_rate(aid)
-        yahoo_url  = f"https://tw.stock.yahoo.com/quote/{aid}/technical-analysis"
 
         cum_shares      = 0.0
         total_cost      = 0.0
@@ -160,7 +187,7 @@ def calculate_settlement_data(df_record, df_price):
         if shares_sold > 0 and last_sell_date is not None:
             realized_data.append({
                 "日期":       last_sell_date.strftime("%Y-%m-%d"),
-                "代號":       aid,#若未來要超連結改成:yahoo_url,
+                "代號":       aid,
                 "名稱":       stock_name,
                 "累積報酬率": f"{(total_r_pnl / total_sell_cost) * 100:.1f}%" if total_sell_cost > 0 else "0%",
                 "已實現損益": round(total_r_pnl, 0),
@@ -174,7 +201,7 @@ def calculate_settlement_data(df_record, df_price):
             est_sell_fee = int(mv * 0.001425) + int(mv * tax_rate)
             u_pnl        = mv - total_cost - est_sell_fee
             unrealized_data.append({
-                "代號":       aid,#若未來要超連結改成:yahoo_url,
+                "代號":       aid,
                 "名稱":       stock_name,
                 "累積報酬率": f"{(u_pnl / total_cost) * 100:.1f}%" if total_cost > 0 else "0%",
                 "未實現損益": round(u_pnl, 0),
@@ -187,80 +214,3 @@ def calculate_settlement_data(df_record, df_price):
     return unrealized_data, realized_data, total_unrealized, total_realized
 
 
-# ──────────────────────────────────────────
-# 模組 3：風控警報
-# ──────────────────────────────────────────
-def _check_rebalance_alerts(df_record, df_price):
-    if df_record.empty or df_price.empty:
-        return []
-
-    df_trade  = df_record[~df_record['id'].str.startswith('00')].copy()
-    latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict()
-    holdings  = {}
-    pure_equity_mv = 0.0
-
-    for aid in df_trade['id'].unique():
-        sub    = df_trade[df_trade['id'] == aid]
-        shares = sub[sub['action'] == 'buy']['share'].sum() - sub[sub['action'] == 'sell']['share'].sum()
-        if shares > 0:
-            px = latest_px.get(aid, 0.0)
-            if px == 0.0:
-                last_buy = sub[sub['action'] == 'buy']
-                px = last_buy['price'].iloc[-1] if not last_buy.empty else 0.0
-            if px > 0:
-                mv   = shares * px
-                name = sub['name'].iloc[0] if 'name' in sub.columns else ""
-                holdings[aid]   = {'name': name, 'shares': shares, 'price': px, 'mv': mv}
-                pure_equity_mv += mv
-
-    alerts = []
-    if pure_equity_mv > 0:
-        for aid, data in holdings.items():
-            weight = data['mv'] / pure_equity_mv
-            if weight > 0.25:
-                sell_value  = (data['mv'] - 0.20 * pure_equity_mv) / 0.8
-                sell_shares = int(sell_value / data['price'])
-                alerts.append(
-                    f"【指令 : 重構】{aid} {data['name']} 投組權重大於25% "
-                    f"(目前{weight*100:.1f}%)，需賣出市值 {sell_value:,.0f} "
-                    f"(約需賣出 {sell_shares} 股)"
-                )
-    return alerts
-
-
-def _check_stoploss_alerts(unrealized_data, threshold=-20.0):
-    alerts = []
-    for item in unrealized_data:
-        roi_float = float(item["累積報酬率"].replace("%", ""))
-        if roi_float <= threshold:
-            alerts.append(
-                f"【指令 : 滅止 】{item['代號']} {item['名稱']} 已觸發 -20% 停損保險機制"
-            )
-    return alerts
-
-
-def _check_bear_market_alerts(df_0050, threshold=-0.20):
-    if df_0050.empty or 'close' not in df_0050.columns:
-        return []
-    max_price    = df_0050['close'].max()
-    latest_price = df_0050['close'].iloc[-1]
-    if max_price == 0:
-        return []
-    drawdown = (latest_price - max_price) / max_price
-    if drawdown <= threshold:
-        return [f"【指令 : 凜冬 】 大盤已從高點回撤 {drawdown*100:.1f}%，正式進入熊市，全面砍倉。"]
-    return []
-
-
-def generate_system_alerts(df_record, df_price, df_0050, unrealized_data):
-    """
-    統一收集並回傳所有風控警報。
-    """
-    alerts = []
-    alerts.extend(_check_bear_market_alerts(df_0050))
-    alerts.extend(_check_stoploss_alerts(unrealized_data))
-
-    #暫且不比例獲利平衡(心理作用，回測無增加績效)
-    #alerts.extend(_check_rebalance_alerts(df_record, df_price))
-    
-    return alerts

@@ -22,10 +22,9 @@ cash (id = cash, label = 隨意(wage/capital))
 
 # 匯入模組
 from market_data.updater.market import update_market_data
-from market_data.updater.benchmark_00631 import update_00631
-from market_data.updater.benchmark_0050 import update_0050
+from market_data.updater.etf import update_etf
 from market_data.updater.revenue import update_revenue
-from fund_stock.management.data.database.backup_database import backup
+from market_data.backup_database import backup
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
 from fund_stock.management.core.backtest.analysis import bt_analysis
@@ -47,9 +46,8 @@ def update_database(backfill_date: str = None) -> str:
             return "今日為週末（非交易日），自動跳過資料更新程序。"
         print('執行每日更新...')
         
-    print('\n\n[1.] 更新大盤(正二/0050)')
-    update_00631()
-    update_0050()
+    print('\n\n[1.] 更新 ETF')
+    update_etf()
     
     print('\n\n[2.] 更新股市')
     update_market_data(backfill_date)

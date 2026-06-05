@@ -1,5 +1,5 @@
 """
-update_fund_ledger.py
+update_navpu.py (ETF 基金版)
 職責：
   1. 計算每日基金帳務 → 輸出 navpu.csv
   2. 回填 transaction.csv 的空白欄位
@@ -15,7 +15,7 @@ update_fund_ledger.py
 # ────────
 # setting
 # ────────
-START_DATE = '2026-03-10'   # 申購日，確保第一天 NAV = BASE_NAV
+START_DATE = None   # 尚未啟用，啟用後設定起始日如 '2026-07-01'
 BASE_NAV   = 10.0
 
 import os
@@ -23,12 +23,15 @@ import pandas as pd
 from datetime import datetime
 import config
 
+# ── ETF 交易稅率 ──
+ETF_TAX_RATE = 0.001  # ETF 優惠稅率 0.1%
+
 
 # ──────────────────────────────────────────
 # 手續費 / 稅
 # ──────────────────────────────────────────
 def _tax_rate(stock_id: str) -> float:
-    return 0.003
+    return ETF_TAX_RATE
 
 def _buy_cost(price: float, share: float, stock_id: str) -> float:
     val = price * share
@@ -40,25 +43,54 @@ def _sell_proceeds(price: float, share: float, stock_id: str) -> float:
 
 
 # ──────────────────────────────────────────
+# 從 etf.csv 寬表讀取報價 → 長表
+# ──────────────────────────────────────────
+def _load_etf_prices():
+    """讀取 etf.csv (寬表)，轉為長表格式 (date, id, close)"""
+    etf_path = config.MARKET_DATA_DIR / "etf.csv"
+    if not os.path.exists(etf_path):
+        return pd.DataFrame(columns=['date', 'id', 'close'])
+
+    df_wide = pd.read_csv(etf_path)
+    df_wide.columns = df_wide.columns.str.strip()
+    df_wide['date'] = pd.to_datetime(df_wide['date'], errors='coerce').dt.normalize()
+
+    etf_cols = [c for c in df_wide.columns if c != 'date']
+    df_long = df_wide.melt(
+        id_vars=['date'],
+        value_vars=etf_cols,
+        var_name='id',
+        value_name='close'
+    )
+    df_long['close'] = pd.to_numeric(df_long['close'], errors='coerce')
+    df_long = df_long.dropna(subset=['close'])
+    df_long = df_long.sort_values(['id', 'date']).reset_index(drop=True)
+
+    if START_DATE:
+        df_long = df_long[df_long['date'] >= START_DATE].copy()
+
+    return df_long
+
+
+# ──────────────────────────────────────────
 # 讀取原始數據
 # ──────────────────────────────────────────
 def _load_raw_data():
-    # journal.csv
-
-    # journal.csv
-    journal_path = config.STOCK_JOURNAL_DIR / "journal.csv"
+    # journal.csv (ETF 交易紀錄)
+    journal_path = config.ETF_JOURNAL_DIR / "journal.csv"
     if not os.path.exists(journal_path):
-        df_record = pd.DataFrame(columns=['date', 'id', 'price', 'share'])
+        df_record = pd.DataFrame(columns=['date', 'id', 'action', 'price', 'share'])
         df_record.to_csv(journal_path, index=False, encoding='utf-8-sig')
     df_record = pd.read_csv(journal_path, dtype={'id': str})
     df_record.columns  = df_record.columns.str.strip().str.lower()
     df_record['date']  = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
-    df_record = df_record[df_record['date'] >= START_DATE].copy()
+    if START_DATE:
+        df_record = df_record[df_record['date'] >= START_DATE].copy()
     df_record['price'] = pd.to_numeric(df_record['price'], errors='coerce').fillna(0)
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
 
-    # transaction.csv
-    transaction_path = config.FUND_STOCK_ADMINISTRATION_DIR / "transaction.csv"
+    # transaction.csv (申購/贖回)
+    transaction_path = config.FUND_ETF_ADMINISTRATION_DIR / "transaction.csv"
     if not os.path.exists(transaction_path):
         df_flows = pd.DataFrame(columns=['date', 'id', 'action', 'price', 'share'])
         df_flows.to_csv(transaction_path, index=False, encoding='utf-8-sig')
@@ -68,25 +100,27 @@ def _load_raw_data():
     df_flows['price'] = pd.to_numeric(df_flows['price'], errors='coerce')  # 保留 NaN
     df_flows['share'] = pd.to_numeric(df_flows['share'], errors='coerce')  # 保留 NaN
 
-    # market.parquet
-    market_path = config.MARKET_DATA_DIR / "market.parquet"
-    if os.path.exists(market_path):
-        df_price = pd.read_parquet(market_path)
-        df_price.columns = df_price.columns.str.strip().str.lower()
-        if 'price' in df_price.columns and 'close' not in df_price.columns:
-            df_price = df_price.rename(columns={'price': 'close'})
-        df_price['date'] = pd.to_datetime(df_price['date'], errors='coerce').dt.normalize()
-        df_price = df_price[df_price['date'] >= START_DATE].copy()
-    else:
-        df_price = pd.DataFrame(columns=['date', 'id', 'close'])
+    # dividend.csv (ETF 配息)
+    dividend_path = config.FUND_ETF_ADMINISTRATION_DIR / "dividend.csv"
+    if not os.path.exists(dividend_path):
+        df_div = pd.DataFrame(columns=['id', 'ex_dividend_date', 'payment_date', 'dividend_per_share'])
+        df_div.to_csv(dividend_path, index=False, encoding='utf-8-sig')
+    df_div = pd.read_csv(dividend_path, dtype={'id': str})
+    df_div.columns = df_div.columns.str.strip().str.lower()
+    df_div['ex_dividend_date'] = pd.to_datetime(df_div['ex_dividend_date'], errors='coerce').dt.normalize()
+    df_div['payment_date'] = pd.to_datetime(df_div['payment_date'], errors='coerce').dt.normalize()
+    df_div['dividend_per_share'] = pd.to_numeric(df_div['dividend_per_share'], errors='coerce').fillna(0)
 
-    return df_record, df_flows, df_price
+    # ETF 報價（從 etf.csv 寬表轉長表）
+    df_price = _load_etf_prices()
+
+    return df_record, df_flows, df_price, df_div
 
 
 # ──────────────────────────────────────────
 # 計算每日帳務
 # ──────────────────────────────────────────
-def _calculate_nav(df_record, df_flows, df_price):
+def _calculate_nav(df_record, df_flows, df_price, df_div):
     if df_record.empty:
         return pd.DataFrame()
 
@@ -105,8 +139,35 @@ def _calculate_nav(df_record, df_flows, df_price):
         dates = sorted(df_record['date'].unique())
 
     history = []
+    receivables = []  # 應收股息清單：[{'id': '0056', 'amount': 1000, 'payment_date': timestamp}]
 
     for d in dates:
+        # 1. 處理入帳日：應收股息轉現金
+        new_receivables = []
+        for r in receivables:
+            if r['payment_date'] <= d:
+                cash += r['amount']
+            else:
+                new_receivables.append(r)
+        receivables = new_receivables
+
+        # 2. 處理除息日：計算新的應收股息
+        div_today = df_div[df_div['ex_dividend_date'] == d]
+        for _, row in div_today.iterrows():
+            aid = row['id']
+            # 計算在除息日「前」的持股數
+            trades_before = df_record[df_record['date'] < d]
+            a = trades_before[trades_before['id'] == aid]
+            shares_held = a[a['action'] == 'buy']['share'].sum() - a[a['action'] == 'sell']['share'].sum()
+            
+            if shares_held > 0:
+                receivable_amount = shares_held * row['dividend_per_share']
+                receivables.append({
+                    'id': aid,
+                    'amount': receivable_amount,
+                    'payment_date': row['payment_date']
+                })
+
         px_d = (df_price[df_price['date'] <= d]
                 .groupby('id').tail(1)
                 .set_index('id')['close']
@@ -132,7 +193,7 @@ def _calculate_nav(df_record, df_flows, df_price):
                 raw = shares * px_d.get(aid, 0.0)
                 mv += raw - int(raw * 0.001425) - int(raw * _tax_rate(aid))
 
-        total_nav = cash + mv
+        total_nav = cash + mv + sum(r['amount'] for r in receivables)
 
         # 申購前先更新 nav_per_unit
         if total_units > 0:
@@ -208,26 +269,30 @@ def _backfill_transaction(df_flows, df_nav, transaction_path):
 # ──────────────────────────────────────────
 # 主流程
 # ──────────────────────────────────────────
-def update_quant():
+def update_etf_nav():
 
-    df_record, df_flows, df_price = _load_raw_data()
-    df_nav = _calculate_nav(df_record, df_flows, df_price)
+    if START_DATE is None:
+        print("ETF 基金尚未啟用 (START_DATE = None)，略過 NAV 計算。")
+        return
+
+    df_record, df_flows, df_price, df_div = _load_raw_data()
+    df_nav = _calculate_nav(df_record, df_flows, df_price, df_div)
 
     if df_nav.empty:
         print("警告：計算結果為空，檔案未更新。")
         return
 
     # 輸出 1：navpu.csv
-    nav_path = config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv"
+    nav_path = config.FUND_ETF_ADMINISTRATION_DIR / "navpu.csv"
     nav_path.parent.mkdir(parents=True, exist_ok=True)
-    df_nav.to_csv(nav_path, index=False,encoding='utf-8-sig')
-    print(f'基金帳務更新完成，目前總筆數 {len(df_nav)} 筆')
+    df_nav.to_csv(nav_path, index=False, encoding='utf-8-sig')
+    print(f'ETF 基金帳務更新完成，目前總筆數 {len(df_nav)} 筆')
     print(f"現淨值(NAV) {df_nav['nav_per_unit'].iloc[-1]:.4f}")
 
     # 輸出 2：回填 transaction.csv
-    transaction_path = config.FUND_STOCK_ADMINISTRATION_DIR / "transaction.csv"
+    transaction_path = config.FUND_ETF_ADMINISTRATION_DIR / "transaction.csv"
     _backfill_transaction(df_flows, df_nav, transaction_path)
 
 
 if __name__ == '__main__':
-    update_quant()
+    update_etf_nav()

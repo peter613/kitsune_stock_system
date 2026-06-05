@@ -97,13 +97,13 @@ def create_prediction(stock_filter=True,amount_on=True):
         
         # [優化 2] 處理法人可能存在的空值，避免 NaN 蔓延
         vol_10 = SMA(volume, 10) * 10 + 1  # 加 1 避免分母為零
-        vol_3 = SMA(volume, 3) * 3 + 1
+        vol_5 = SMA(volume, 5) * 5 + 1
         t_net_10 = SMA(group['Trust_Net'].values.astype(float), 10) * 10
-        t_net_3 = SMA(group['Trust_Net'].values.astype(float), 3) * 3
+        t_net_5 = SMA(group['Trust_Net'].values.astype(float), 5) * 5
         
         #投信方向盤 (保留正負號，判斷是作帳還是結帳)
         trust_in_10 = t_net_10 / vol_10
-        trust_in_3 = t_net_3 / vol_3
+        trust_in_5 = t_net_5 / vol_5
 
         amount20 = SMA(amount_ln, 20)
         amount_breakout_20  = amount / (SMA(amount,20) + 1e-9)
@@ -137,11 +137,10 @@ def create_prediction(stock_filter=True,amount_on=True):
         group = group.copy()          # 避免 SettingWithCopyWarning
         cols = {
             'trust_in_10': trust_in_10,
-            'trust_in_3': trust_in_3,
+            'trust_in_5': trust_in_5,
             'amount20': amount20,
             'amount_ema_20': amount_ema_20,
             'a_breakout_20':amount_breakout_20,
-            'r_20_abs': r_20_abs,
             'breakout_20': breakout_20,
             'breakout_200': breakout_200,
             'support_20': support_20,
@@ -219,14 +218,14 @@ def create_prediction(stock_filter=True,amount_on=True):
         #刪掉60日特徵 ("amount60","sma60","r2_60")
 
         # 均線與技術指標
-        "sma20",  "sma200", "kama", "adx",
+        "sma20", "sma200", "kama", "adx",
         
 
         # 流動性 (Log化)
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_10", "trust_in_3",
+        "trust_in_10", "trust_in_5",
         
         # 基本面
         "yoy_ma5_bias","yoy",

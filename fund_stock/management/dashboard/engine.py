@@ -72,19 +72,25 @@ def load_data():
 
     _validate_ids(df_record, df_price)
 
-    def _load_bench(name):
-        path = config.MARKET_DATA_DIR / name
-        if not os.path.exists(path):
+    def _load_bench(ticker):
+        """從寬表 etf.csv 讀取指定 ETF 的收盤價"""
+        etf_path = config.MARKET_DATA_DIR / "etf.csv"
+        if not os.path.exists(etf_path):
             return pd.DataFrame()
-        df = pd.read_csv(path, dtype={'id': str})
-        df = _standardize(df)
+        df_etf = pd.read_csv(etf_path)
+        df_etf.columns = df_etf.columns.str.strip()
+        if ticker not in df_etf.columns:
+            return pd.DataFrame()
+        df = df_etf[['date', ticker]].rename(columns={ticker: 'close'}).copy()
         df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
+        df['close'] = pd.to_numeric(df['close'], errors='coerce')
+        df = df.dropna(subset=['close'])
         df['daily_return'] = df['close'].pct_change()
         df['realized_vol'] = df['daily_return'].rolling(window=20).std() * (252 ** 0.5)
         return df[df['date'] >= START_DATE].copy()
 
-    df_0050   = _load_bench("0050.csv")
-    df_00631L = _load_bench("00631.csv")
+    df_0050   = _load_bench("0050")
+    df_00631L = _load_bench("00631L")
 
     return df_record, df_flows, df_price, df_0050, df_00631L
 

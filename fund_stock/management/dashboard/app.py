@@ -129,15 +129,20 @@ def load_nav_history():
     df_nav['dd_pct']  = (df_nav['nav_per_unit'] - df_nav['max_nav']) / df_nav['max_nav']
 
     # ── Benchmark ──
-    def _load_bench(filename):
-        path = config.MARKET_DATA_DIR / filename
-        df = pd.read_csv(path)
+    def _load_bench(ticker):
+        """從寬表 etf.csv 讀取指定 ETF 的收盤價"""
+        etf_path = config.MARKET_DATA_DIR / "etf.csv"
+        df_etf = pd.read_csv(etf_path)
+        df_etf.columns = df_etf.columns.str.strip()
+        if ticker not in df_etf.columns:
+            return pd.DataFrame()
+        df = df_etf[['date', ticker]].rename(columns={ticker: 'close'}).copy()
         df.columns = df.columns.str.strip().str.lower()
         df['date'] = pd.to_datetime(df['date']).dt.normalize()
         return df.sort_values('date').reset_index(drop=True)
 
-    df_0050   = _load_bench("0050.csv")
-    df_00631L = _load_bench("00631.csv")
+    df_0050   = _load_bench("0050")
+    df_00631L = _load_bench("00631L")
 
     # 對齊起始日
     start = df_nav['date'].iloc[0]

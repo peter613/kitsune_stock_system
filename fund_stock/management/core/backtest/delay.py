@@ -383,8 +383,8 @@ def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
-    VERSION     = 'v30'
-    SELECT_RANK = list(range(1, 4))#前三名
+    VERSION     = 'v31'
+    SELECT_RANK = list(range(1, 4))
 
     results = []
     for i in range(10):#延遲10天

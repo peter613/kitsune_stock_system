@@ -59,13 +59,12 @@ def create_cbm(version=None):
 
         #趨勢強度
         "kama","adx",
-        
+
         # 流動性 (amount Log化)
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_3", "trust_in_10",
-        
+        "trust_in_5", "trust_in_10",
         # 基本面
         "yoy","yoy_ma5_bias",
 
@@ -98,17 +97,17 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=20000,
+        iterations=10000,
         learning_rate=0.001,
         depth=6,
-        early_stopping_rounds=5000,
+        #early_stopping_rounds=4000,
         #決定模型最小化損失目標
         loss_function='YetiRank',
         #決定模型什麼時候停，搭配early stopping
-        eval_metric='NDCG:top=3',
+        eval_metric='NDCG:top=5',
 
         #印出數據
-        custom_metric=['NDCG:top=3','PrecisionAt:top=3'],
+        custom_metric=['NDCG:top=5','PrecisionAt:top=5'],
         #每多少輪印進度
         verbose=200,
         random_seed=42,
@@ -133,4 +132,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v30')
+    create_cbm(version='v31')
