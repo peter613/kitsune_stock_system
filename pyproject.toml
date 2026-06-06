@@ -18,7 +18,6 @@ dependencies = [
     "requests",
     "urllib3",
     "TA-Lib",
-    "lxml",
     "pyarrow",
     "python-dotenv",
     "html5lib",

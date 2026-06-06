@@ -127,7 +127,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
     AMOUNT_ON         = True
-    AMOUNT_THRESHOLD  = 50000
+    AMOUNT_THRESHOLD  = 100000 #1.0億
 
     rank_str = ','.join(map(str, select_rank))
     print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
@@ -494,4 +494,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
 
 if __name__ == "__main__":
     # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v31', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)
+    backtester(version='v32', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)

@@ -7,7 +7,7 @@ import config
 from scipy.stats import entropy
 
 # --- 設定區 ---
-def create_prediction(stock_filter=True,amount_on=True):
+def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     # 1. 檔案路徑更新
     file_name = config.MARKET_DATA_DIR / 'market.parquet'
     file_name_revenue = config.MARKET_DATA_DIR / 'revenue.csv'
@@ -78,11 +78,11 @@ def create_prediction(stock_filter=True,amount_on=True):
         for col in feature_cols:
             if col in df.columns:
                 if col in ['mom', 'yoy', 'yoy_ma5', 'yoy_ma5_bias']:
-                    df[col] = df[col].clip(-100, 100)
-                else:
-                    lower = df[col].quantile(0.01)
-                    upper = df[col].quantile(0.99)
-                    df[col] = df[col].clip(lower, upper)
+                    df[col] = df[col].clip(-50, 50)
+                # else:
+                #     lower = df[col].quantile(0.01)
+                #     upper = df[col].quantile(0.99)
+                #     df[col] = df[col].clip(lower, upper)
         return df
 
     # 特徵計算 V11 Sniper
@@ -194,11 +194,19 @@ def create_prediction(stock_filter=True,amount_on=True):
     if len(valid_dates) == 0:
         print("錯誤：找不到完整的交易日資料。")
         return
-    latest_date = valid_dates.max()
+
+    if specified_date is not None:
+        specified_date = pd.to_datetime(specified_date).normalize()
+        if specified_date not in valid_dates:
+            raise ValueError(f"指定日期 {specified_date.date()} 不存在於有效交易日資料中。")
+        selected_date = specified_date
+        print(f"使用指定日期進行預測：{selected_date.date()} (共 {date_counts[selected_date]} 檔)")
+    else:
+        selected_date = valid_dates.max()
+        print(f"提取最新股票交易日: {selected_date.date()} (共 {date_counts[selected_date]} 檔)")
+
     print(f"提取最新營收月份: {df_revenue['date'].dt.strftime('%Y-%m').max()}")
-    print(f"提取最新股票交易日: {latest_date.date()} (共 {date_counts[latest_date]} 檔)")
-    
-    final_predict_df = df[df["date"] == latest_date].copy()
+    final_predict_df = df[df["date"] == selected_date].copy()
     
     del df
     gc.collect()
@@ -210,7 +218,7 @@ def create_prediction(stock_filter=True,amount_on=True):
     final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)]
 
     if amount_on:
-        AMOUNT_THRESHOLD = 50000 #當天成交0.5億
+        AMOUNT_THRESHOLD = 100000 #當天成交1億
         final_predict_df = final_predict_df[final_predict_df['amount'] > AMOUNT_THRESHOLD].reset_index(drop=True)
         print(f'執行成交值流動性過濾> {AMOUNT_THRESHOLD}(千)...')
 
@@ -244,4 +252,4 @@ def create_prediction(stock_filter=True,amount_on=True):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction()
+    create_prediction(specified_date='20260508')

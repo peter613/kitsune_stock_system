@@ -161,9 +161,9 @@ def type_effect(text, delay=0.023, end_new_line=True):
         print()
 
 def get_available_versions():
-    if not os.path.exists(config.CBM_DIR): return []
-    versions = [d for d in os.listdir(config.CBM_DIR)
-                if os.path.isdir(config.CBM_DIR / d) and d.startswith('v')]
+    if not os.path.exists(config.STOCK_CBM_DIR): return []
+    versions = [d for d in os.listdir(config.STOCK_CBM_DIR)
+                if os.path.isdir(config.STOCK_CBM_DIR / d) and d.startswith('v')]
     return sorted(versions)
 
 def main():
@@ -217,7 +217,7 @@ def main():
                 print(f"{res}")
             
             elif action_database == "回補股票資料庫":
-                date_str = questionary.text("請輸入要回補的日期 (如 20231001):").ask()
+                date_str = questionary.text("請輸入要回補的日期 (如 20231001):",qmark="",instruction=" ").ask()
                 if date_str:
                     print(f"\n[回補資料庫，指定日期: {date_str}]")
                     res = update_database(backfill_date=date_str)

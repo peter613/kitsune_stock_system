@@ -8,8 +8,6 @@ import os
 import time
 import config
 import random
-import io
-import lxml
 session = requests.Session()
 # 設定檔案路徑
 FILE_NAME = config.MARKET_DATA_DIR/'market.parquet'
@@ -55,72 +53,75 @@ def basic_twse(date_str):
     url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={date_str}&type=ALLBUT0999&response=json"
 
     res = retry_crwler(url, HEADERS_TWSE, sleep_range=(2, 5))
-    if not res: return pd.DataFrame()
-    
+    if not res: return None
+
     try:
         json_data = res.json()
     except Exception as e:
         print(f"[解析錯誤]: {e}")
-        return pd.DataFrame()
+        return None
 
-    required_cols = ['date', 'id', 'name', 'volume', 'amount', 'open', 'high', 'low', 'close']
-    if not json_data.get('tables'): return pd.DataFrame(columns=required_cols)
+    if not json_data.get('tables'):
+        return None
 
     try:
         target = next(t for t in json_data['tables'] if '每日收盤行情' in t.get('title', ''))
-        df = pd.DataFrame(target['data'], columns=target['fields'])
-    except: 
-        return pd.DataFrame(columns=required_cols)
+    except StopIteration:
+        return None
 
-    df = df.replace({r'<[^>]+>': '', ',': ''}, regex=True)
-    df.replace('--', pd.NA, inplace=True)
-    
-    rename_map = {'證券代號':'id', '證券名稱':'name', '成交股數':'volume', '成交金額':'amount', 
-                  '開盤價':'open', '最高價':'high', '最低價':'low', '收盤價':'close'}
-    df = df.rename(columns=rename_map)
-    
+    df = pd.DataFrame(target['data'], columns=target['fields'])
+    df = df.replace({r'<[^>]+>': '', ',': '', '--': ''}, regex=True)
+
+    # [0]代號 [1]名稱 [2]成交股數 [4]成交金額 [5]開盤 [6]最高 [7]最低 [8]收盤
+    df = df.iloc[:, [0, 1, 2, 4, 5, 6, 7, 8]].copy()
+    df.columns = ['id', 'name', 'volume', 'amount', 'open', 'high', 'low', 'close']
+
     df['id'] = df['id'].astype(str).str.strip()
     df = df[~df['id'].str.startswith('00')]
     df = df[df['id'].str.len() == 4]
-    
-    df.insert(0, 'date', date_str)
-    num_cols = ['volume', 'amount', 'open', 'high', 'low', 'close']
-    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
+
+    df[['volume', 'amount', 'open', 'high', 'low', 'close']] = df[['volume', 'amount', 'open', 'high', 'low', 'close']].apply(pd.to_numeric, errors='coerce')
+
     df['volume'] /= 1000
     df['amount'] /= 1000
-    return df[['date','id', 'name', 'volume', 'amount', 'open', 'high', 'low', 'close']]
+    df.insert(0, 'date', date_str)
+
+    return df
 
 def chips_twse(date_str):
     print(f"[上市] 下載外資/投信籌碼...")
-    url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={date_str}&selectType=ALL&response=html"
+    url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={date_str}&selectType=ALL&response=json"
 
     res = retry_crwler(url, HEADERS_TWSE, sleep_range=(2, 5))
     if not res: return None
-    res.encoding = 'utf-8' 
-            
+
     try:
-        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
+        json_data = res.json()
     except Exception as e:
         print(f"[解析錯誤] : {e}")
         return None
-    
-    df_raw = dfs[0] 
-    
-    df = df_raw.iloc[:, [0, 1, 4, 10]].copy() 
-    df.columns = ['id', 'name', 'Foreign_Net','Trust_Net'] 
-    
+
+    if not json_data.get('data'):
+        return None
+
+    df = pd.DataFrame(json_data['data'], columns=json_data['fields'])
+    df = df.replace({r'<[^>]+>': '', ',': ''}, regex=True)
+
+    df = df.iloc[:, [0, 1, 4, 10]].copy()
+    df.columns = ['id', 'name', 'Foreign_Net', 'Trust_Net']
+
     df['id'] = df['id'].astype(str).str.strip()
     df = df[~df['id'].str.startswith('00')]
     df = df[df['id'].str.len() == 4]
 
     if df.empty:
         return None
-    
+
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
 
-    df['Foreign_Net']/=1000
-    df['Trust_Net']/=1000
+    df['Foreign_Net'] /= 1000
+    df['Trust_Net'] /= 1000
     return df
 
 # ==========================================
@@ -131,27 +132,33 @@ def basic_tpex(date_str):
     year = date_str[:4]
     month = date_str[4:6]
     day = date_str[6:8]
-    url = f'https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date={year}%2F{month}%2F{day}&type=EW&id=&response=html&order=0&sort=asc'
+    url = f'https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date={year}%2F{month}%2F{day}&type=EW&id=&response=json&order=0&sort=asc'
     res = retry_crwler(url, HEADERS_TPEX, sleep_range=(3, 7))
     if not res: return None
-    res.encoding = 'utf-8' 
 
     try:
-        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
+        json_data = res.json()
     except Exception as e:
-        print(f"無法解析 HTML 表格: {e}")
+        print(f"[解析錯誤] : {e}")
         return None
-        
-    df_raw = dfs[0] 
-    df = df_raw.iloc[:, [0, 1, 2, 4, 5, 6, 7,8]].copy() 
-    df.columns = ['id', 'name', 'close','open','high','low','volume','amount'] 
-    
+
+    if not json_data.get('tables') or not json_data['tables'][0].get('data'):
+        return None
+
+    table = json_data['tables'][0]
+    df = pd.DataFrame(table['data'], columns=table['fields'])
+    df = df.replace({r'<[^>]+>': '', ',': ''}, regex=True)
+
+    # [0]代號 [1]名稱 [2]收盤 [4]開盤 [5]最高 [6]最低 [7]成交股數 [8]成交金額
+    df = df.iloc[:, [0, 1, 2, 4, 5, 6, 7, 8]].copy()
+    df.columns = ['id', 'name', 'close', 'open', 'high', 'low', 'volume', 'amount']
+
     df['id'] = df['id'].astype(str).str.strip()
     df = df[~df['id'].str.startswith('00')]
     df = df[df['id'].str.len() == 4]
-    
-    df[['close','open','high','low','volume','amount']] = df[['close','open','high','low','volume','amount']].apply(pd.to_numeric, errors='coerce')
-    df[['close','open','high','low','volume','amount']] = df[['close','open','high','low','volume','amount']].fillna(0)
+
+    df[['close', 'open', 'high', 'low', 'volume', 'amount']] = df[['close', 'open', 'high', 'low', 'volume', 'amount']].apply(pd.to_numeric, errors='coerce')
+    df[['close', 'open', 'high', 'low', 'volume', 'amount']] = df[['close', 'open', 'high', 'low', 'volume', 'amount']].fillna(0)
 
     df['volume'] /= 1000
     df['amount'] /= 1000
@@ -164,35 +171,40 @@ def chips_tpex(date_str):
     year = date_str[:4]
     month = date_str[4:6]
     day = date_str[6:8]
-    url = f'https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=AL&date={year}%2F{month}%2F{day}&id=&response=html'
+    url = f'https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=AL&date={year}%2F{month}%2F{day}&id=&response=json'
 
     res = retry_crwler(url, HEADERS_TPEX, sleep_range=(3, 7))
     if not res: return None
-    res.encoding = 'utf-8' 
 
     try:
-        dfs = pd.read_html(io.StringIO(res.text), thousands=',') 
+        json_data = res.json()
     except Exception as e:
         print(f"[解析錯誤] : {e}")
-        return None    
+        return None
 
-    df_raw = dfs[0] 
-    
-    df = df_raw.iloc[:, [0, 1, 4, 13]].copy() 
-    df.columns = ['id', 'name', 'Foreign_Net','Trust_Net'] 
-    
+    if not json_data.get('tables') or not json_data['tables'][0].get('data'):
+        return None
+
+    table = json_data['tables'][0]
+    df = pd.DataFrame(table['data'], columns=table['fields'])
+    df = df.replace({r'<[^>]+>': '', ',': ''}, regex=True)
+
+    # [0]代號 [1]名稱 [4]外資買賣超 [13]投信買賣超
+    df = df.iloc[:, [0, 1, 4, 13]].copy()
+    df.columns = ['id', 'name', 'Foreign_Net', 'Trust_Net']
+
     df['id'] = df['id'].astype(str).str.strip()
     df = df[~df['id'].str.startswith('00')]
     df = df[df['id'].str.len() == 4]
 
     if df.empty:
         return None
-    
+
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].apply(pd.to_numeric, errors='coerce')
     df[['Foreign_Net', 'Trust_Net']] = df[['Foreign_Net', 'Trust_Net']].fillna(0)
 
-    df['Foreign_Net']/=1000
-    df['Trust_Net']/=1000
+    df['Foreign_Net'] /= 1000
+    df['Trust_Net'] /= 1000
     return df
 
 # ==========================================

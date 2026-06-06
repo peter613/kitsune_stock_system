@@ -127,7 +127,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     target_df = target_df.sort_values('predict_score', ascending=False).reset_index(drop=True)
     target_df['rank'] = range(1, len(target_df) + 1)
 
-    # --- 核心邏輯修改：改為回傳字串而不是單純 print ---
+    #--- 核心邏輯修改：改為回傳字串而不是單純 print ---
     def get_feature_analysis_string(all_df, ranks_to_show, features_to_analyze) -> str:
         analysis_df = all_df.copy()
         valid_features = []
@@ -140,14 +140,10 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
         
         display_df = analysis_df[analysis_df['rank'].isin(ranks_to_show)].copy()
         
-        # 收集分析字串供 AI 讀取
-        ai_payload = []
-        ai_payload.append(f"Inari 特徵分析 (對標全市場 {len(all_df)} 檔科技股):")
-        
         for _, row in display_df.iterrows():
             stock_info = f"Rank {int(row['rank'])}. [{row['id']}] {row['name']} (得分: {row['predict_score']:.4f})"
-            print(f"\n{stock_info}") # 保留螢幕輸出給人類看
-            
+            print(f"\n{stock_info}") 
+                        
             strong_feats = []
             for feat in valid_features:
                 pct_val = row[f"{feat}_pct"]
@@ -159,16 +155,11 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
             if strong_feats:
                 output_str = ", ".join([f"{k}(PR{v*100:.1f})" for k, v in strong_feats])
                 print(output_str) # 保留螢幕輸出
-                ai_payload.append(f"{stock_info} -> 強勢特徵: {output_str}")
             else:
                 print("指標分佈平均，無顯著單一強項。")
-                ai_payload.append(f"{stock_info} -> 指標分佈平均。")
-                
-        # 將串列結合成單一字串
-        return "\n".join(ai_payload)
-
+            
     # 執行分析，並把結果存進變數
-    ai_analysis_data = get_feature_analysis_string(target_df, select_ranks, feature_cols)
+    get_feature_analysis_string(target_df, select_ranks, feature_cols)
 
     # 4. 存檔
     top_picks = target_df[target_df['rank'].isin(select_ranks)].copy()
@@ -179,9 +170,6 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')
     print(f"\n預測結果已儲存至: {output_dir}")
 
-    # 5. 回傳封裝好的資料給 Kitsune 大腦
-    return f"以下是選股結果與其在全市場的特徵百分位(PR)排名：{ai_analysis_data}"
-
 if __name__ == "__main__":
-    #print(search_stock('南亞科', version='v25'))
-    prediction(version='v27', select_ranks=[c for c in range(1,4)])
+    #print(search_stock('禾伸堂', version='v31'))
+    prediction(version='v32', select_ranks=[c for c in range(1,6)])

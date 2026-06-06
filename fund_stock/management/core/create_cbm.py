@@ -132,4 +132,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v31')
+    create_cbm(version='v33')

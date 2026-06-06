@@ -80,9 +80,11 @@ def update_etf(start_date=START_DATE):
     df_close.to_csv(file_path, index=False, encoding='utf-8')
 
     print(f"ETF 標竿資料庫同步成功! 共 {len(etf_cols)} 檔 ETF，{len(df_close)} 筆資料")
+    print('===================== [資料庫抽樣檢驗] =====================')
     # for col in etf_cols:
     #     print(f"  {col} 最新價: {df_close[col].iloc[-1]}")
-    print(df_close.tail(3))
+    print(df_close.tail(2))
+    print('===========================================================')
 
 
 if __name__ == "__main__":
