@@ -1,4 +1,4 @@
-﻿import os
+import os
 from click import group
 import pandas as pd
 import numpy as np
@@ -25,6 +25,25 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     # 強制執行時間格式化 (解決 .dt 報錯)
     df['date'] = pd.to_datetime(df['date'])
     df_revenue['date'] = pd.to_datetime(df_revenue['date'])
+
+    # 讀取 ETF 大盤資料 (0050)
+    etf_path = config.MARKET_DATA_DIR / 'etf.csv'
+    if os.path.exists(etf_path):
+        df_etf = pd.read_csv(etf_path)
+        if '0050' in df_etf.columns:
+            df_etf = df_etf[['date', '0050']].rename(columns={'0050': 'etf_close'})
+            df_etf['date'] = pd.to_datetime(df_etf['date'])
+            
+            # 確保大盤資料對齊所有的交易日，並且 ffill 避免 NaN 毒化 TA-Lib
+            all_dates = pd.DataFrame({'date': df['date'].unique()}).sort_values('date')
+            all_dates = pd.merge(all_dates, df_etf, on='date', how='left')
+            all_dates['etf_close'] = all_dates['etf_close'].ffill().bfill()
+            
+            df = pd.merge(df, all_dates, on='date', how='left')
+        else:
+            df['etf_close'] = np.nan
+    else:
+        df['etf_close'] = np.nan
 
 
     # 強制執行 ID 格式化 (解決 Merge 衝突與補零)
@@ -82,6 +101,13 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         amount     = group['amount'].values.astype(float)
         trust_net  = group['Trust_Net'].values.astype(float)
         foreign_net= group['Foreign_Net'].values.astype(float)
+        etf_close  = group['etf_close'].values.astype(float) if 'etf_close' in group else np.full(len(close), np.nan)
+
+        # ── Beta 因子 ─────────────────────────────────────────
+        try:
+            beta_60 = BETA(close, etf_close, timeperiod=60)
+        except Exception:
+            beta_60 = np.full(len(close), np.nan)
 
         # ── 均線 ──────────────────────────────────────────────
         sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
@@ -109,16 +135,11 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
         # 價格築底 : 1代表無窮遠離底部
         support_20 = 1 - (MIN(close, timeperiod=20) / (close + 1e-9))
-        support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
 
         # ── 法人籌碼 ──────────────────────────────────────────
-        vol_5   = SMA(volume, 5) * 5 + 1
-        vol_10   = SMA(volume, 10) * 10 + 1
-        t_net_5 = SMA(trust_net,   5) * 5
-        t_net_10 = SMA(trust_net,   10) * 10
-
-        trust_in_5   = t_net_5 / vol_5
-        trust_in_10   = t_net_10 / vol_10
+        vol_20   = SMA(volume, 20) * 20 + 1
+        t_net_20 = SMA(trust_net, 20) * 20
+        trust_in_20 = t_net_20 / vol_20
 
         close_pct = np.zeros_like(close)
         close_pct[0] = np.nan
@@ -152,9 +173,8 @@ def create_training(version='v14', years_10=True, stock_filter=True):
             'breakout_20'   : breakout_20,
             'breakout_200'  : breakout_200,
             'support_20'    : support_20,
-            'support_200'   : support_200,
-            'trust_in_5'    : trust_in_5,
-            'trust_in_10'   : trust_in_10,
+            'trust_in_20'   : trust_in_20,
+            'beta_60'       : beta_60,
             'return_20d'    : return_20d,
         }
         for col, arr in cols.items():
@@ -239,4 +259,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v33', years_10=True, stock_filter=True)
+    create_training(version='v34', years_10=True, stock_filter=True)

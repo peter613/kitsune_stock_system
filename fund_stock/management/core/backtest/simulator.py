@@ -126,6 +126,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
+    SINGLE_TRADE_CAP = 0.80    # 單筆最高獲利封頂 (80%)
     AMOUNT_ON         = True
     AMOUNT_THRESHOLD  = 100000 #1.0億
 
@@ -246,7 +247,12 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
             day_stock_val = 0.0
             for idx, p in portfolio.items():
                 if p['alive'] and d_idx < len(p['prices']):
-                    day_stock_val += p['shares'] * p['prices'][d_idx]
+                    cur_val = p['shares'] * p['prices'][d_idx]
+                    # 強制獲利封頂
+                    max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
+                    if cur_val > max_allowed:
+                        cur_val = max_allowed
+                    day_stock_val += cur_val
                     if today_date is None:
                         today_date = p['dates'][d_idx]
 
@@ -263,7 +269,13 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
         for idx, p in portfolio.items():
             prices = p.get('prices', [])
             if len(prices) > 0:
-                end_stock_val += p['shares'] * prices[-1]
+                final_mkt = p['shares'] * prices[-1]
+                # 強制獲利封頂
+                max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
+                if final_mkt > max_allowed:
+                    final_mkt = max_allowed
+                p['capped_final_mkt'] = final_mkt  # 記錄下來供 simulated_return 使用
+                end_stock_val += final_mkt
 
         # 月底整批賣出手續費
         sell_cost = _calc_tx_cost(end_stock_val, TRANSACTION_COST)
@@ -285,7 +297,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
         for idx, p in portfolio.items():
             prices = p.get('prices', [])
             if len(prices) > 0:
-                final_mkt  = p['shares'] * prices[-1]
+                final_mkt  = p.get('capped_final_mkt', p['shares'] * prices[-1])
                 sell_fee   = _calc_tx_cost(final_mkt, TRANSACTION_COST)
                 total_recv = (final_mkt - sell_fee) + p['own_cash']
                 # 分母：月初「原始等額分配」（未扣買入費，對應 return_20d 的基準）
@@ -371,27 +383,38 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     # ──────────────────────────────────────────────
     # 6. 對照組
     # ──────────────────────────────────────────────
-    print(f"下載對照組 ({benchmark})...")
+    print(f"讀取對照組 ({benchmark})...")
     benchmark_nav    = None
     bench_total_ret  = 0.0
     bench_annual_ret = 0.0
+    bdf = pd.DataFrame()
 
     try:
-        start_d = results_df['date'].min()
-        end_d   = results_df['date'].max()
-        bdf = yf.download(benchmark, start=start_d, end=end_d, progress=False)
-        if not bdf.empty:
-            if isinstance(bdf.columns, pd.MultiIndex):
-                close = bdf['Close'].iloc[:, 0]
+        start_d = results_df['date'].min().strftime('%Y-%m-%d')
+        end_d   = results_df['date'].max().strftime('%Y-%m-%d')
+        
+        etf_path = config.MARKET_DATA_DIR / 'etf.csv'
+        if os.path.exists(etf_path):
+            etf_df = pd.read_csv(etf_path)
+            etf_df['date'] = pd.to_datetime(etf_df['date'])
+            
+            ticker = benchmark.replace('.TW', '')
+            if ticker in etf_df.columns:
+                # 篩選日期
+                bdf = etf_df[(etf_df['date'] >= start_d) & (etf_df['date'] <= end_d)].copy()
+                if not bdf.empty:
+                    bdf = bdf.set_index('date')
+                    close = bdf[ticker]
+                    benchmark_nav    = close / close.iloc[0]
+                    bench_total_ret  = benchmark_nav.iloc[-1] - 1.0
+                    n_years          = (bdf.index[-1] - bdf.index[0]).days / 365.25
+                    bench_annual_ret = (benchmark_nav.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
             else:
-                close = bdf['Close']
-            # 對照組也以 NAV 方式呈現（初始 = 1.0）
-            benchmark_nav    = close / close.iloc[0]
-            bench_total_ret  = benchmark_nav.iloc[-1] - 1.0
-            n_years          = (bdf.index[-1] - bdf.index[0]).days / 365.25
-            bench_annual_ret = (benchmark_nav.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
+                print(f"警告：etf.csv 中找不到 {ticker} 欄位。")
+        else:
+            print(f"找不到 {etf_path}，跳過對照組。")
     except Exception as e:
-        print(f"對照組下載失敗: {e}")
+        print(f"對照組讀取失敗: {e}")
 
     # ──────────────────────────────────────────────
     # 7. 圖表（兩張子圖合成一張 figure，統一 plt.show()）
@@ -494,4 +517,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
 
 if __name__ == "__main__":
     # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v32', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)
+    backtester(version='v35', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)

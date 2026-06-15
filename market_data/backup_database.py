@@ -70,9 +70,9 @@ def backup():
             os.remove(temp_file)
 
     for local, remote in [
-        (f"{config.MARKET_DATA_DIR}/revenue.csv",                                 "revenue/revenue.csv"),
-        (f"{config.STOCK_JOURNAL_DIR}/journal.csv",                                  "trading_record/trading_record.csv"),
-        (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/transaction.csv",            "transaction/transaction.csv"),
+        (f"{config.MARKET_DATA_DIR}/revenue.csv",                              "/revenue.csv"),
+        (f"{config.STOCK_JOURNAL_DIR}/journal.csv",                            "/trading_record.csv"),
+        (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/transaction.csv",            "/transaction.csv"),
     ]:
         responses.append(backup_to_supabase('stock_data_backup', local, remote))
 

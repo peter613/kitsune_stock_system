@@ -27,8 +27,8 @@ _CSS = """
 }
 /* ── 選單page間隔 ── */
 [data-testid="stSidebar"] .stRadio label {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
 }
 /* ── 標題 ── */
 .stApp h1 {
@@ -48,7 +48,7 @@ _CSS = """
 
 /* ── Metric label（小字） ── */
 [data-testid="stMetricLabel"] {
-    font-size: 1.2rem !important;
+    font-size: 1.0rem !important;
     font-weight: 800 !important;
     color: #333333 !important;
 }
@@ -99,10 +99,9 @@ def main():
             unsafe_allow_html=True,
         )
         st.divider()
-
-        selected_name = st.radio("投資人", list(reversed(subscribers.keys())))
+        selected_name = st.selectbox("投資人", list(subscribers.keys()), index=1)
         st.divider()
-        selected_page = st.radio("頁面", list(_PAGES.keys()))
+        selected_page = st.radio("頁面", list(_PAGES.keys()), index=0)
 
     subscriber = subscribers[selected_name]
     df_equity  = subscriber.calculate_equity(df_history, df_flows)

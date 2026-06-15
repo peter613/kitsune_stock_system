@@ -106,7 +106,7 @@ def update_revenue():
     """
     供外部調用的主要接口，包含爬取、合併、存檔
     """
-    print(f">> 啟動營收更新程序 (目標月份: {year}/{month})...")
+    print(f"啟動營收更新程序 (目標月份: {year}/{month})...")
     
     # 在函式內才執行爬蟲，避免導入副作用
     twse_df = revenue_crawer('sii',0)

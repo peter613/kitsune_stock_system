@@ -33,6 +33,7 @@ from fund_stock.management.data.cleaning.pred import create_prediction
 from fund_stock.management.core.create_cbm import create_cbm
 from fund_stock.management.journal.update_journal import update_journal
 from fund_stock.administration.update_navpu import update_quant
+from fund_stock.administration.backup_navpu import backup_navpu
 
 # =================
 # 系統工具定義(指令)
@@ -54,13 +55,15 @@ def update_database(backfill_date: str = None) -> str:
 
     print('\n\n[3.] 更新基金帳務')
     update_quant()
+    print('\n\n[4.] 備份 NAVPU')
+    backup_navpu()
 
     return f"\n\n資料庫已全面更新完畢。"
 
-def update_rev_database() -> str:
-    print(f"營收爬蟲...")
-    update_revenue()
-    return f"\n\n營收資料庫已全面更新完畢。"
+def backup_data() -> str:
+    print(f"備份資料...")
+    backup()
+    return f"\n\n資料已成功備份。"
 
 def open_dashboard_fund() -> str:
     """啟動 Streamlit fund 視覺化儀表板/戰情室/dashboard。"""
@@ -113,13 +116,7 @@ def run_prediction(version: str, update_features: bool = True) -> str:
     
     print(f"啟動 {version} 模型預測...")
     prediction_result_string = prediction(version) 
-    
-    return_payload = f"""
-    版本 {version} 預測執行完畢。
-    以下是模型選出的股票清單與數據。
-    {prediction_result_string}
-    """
-    return return_payload
+
 
 def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
     """執行模型歷史回測。
@@ -225,13 +222,11 @@ def main():
                     
             elif action_database == "更新營收資料庫":
                 print("\n[更新營收資料庫]")
-                res = update_rev_database()
-                print(f"{res}")
+                update_revenue()
 
             elif action_database == "資料庫備份":
                 print("\n[備份至supabase(market & revenue)]")
-                res = backup()
-                print(f"{res}")
+                backup_data()
 
         elif action_home == "量化模組":
             action_quant = questionary.select(
@@ -269,8 +264,7 @@ def main():
                             print(f"{res}")
                             
                     elif action_quant == "預測":
-                        res = run_prediction(version)
-                        # print(f"{res}")
+                        run_prediction(version)
 
             elif action_quant == "模型訓練":
                 # 模型訓練通常會建立新版本，因此保留輸入欄位

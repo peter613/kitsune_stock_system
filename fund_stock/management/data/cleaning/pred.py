@@ -1,4 +1,4 @@
-﻿import os
+import os
 import pandas as pd
 import numpy as np
 from talib import *
@@ -25,6 +25,22 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     # 4. [防禦前置] 在進入任何排序或檢查前，強制將 id 轉為字串並補零
     df['id'] = df['id'].astype(str).str.zfill(4)
     df_revenue['id'] = df_revenue['id'].astype(str).str.zfill(4)
+
+    # 讀取 ETF 大盤資料 (0050)
+    etf_path = config.MARKET_DATA_DIR / 'etf.csv'
+    if os.path.exists(etf_path):
+        df_etf = pd.read_csv(etf_path)
+        if '0050' in df_etf.columns:
+            df_etf = df_etf[['date', '0050']].rename(columns={'0050': 'etf_close'})
+            df_etf['date'] = pd.to_datetime(df_etf['date'])
+            all_dates = pd.DataFrame({'date': df['date'].unique()}).sort_values('date')
+            all_dates = pd.merge(all_dates, df_etf, on='date', how='left')
+            all_dates['etf_close'] = all_dates['etf_close'].ffill().bfill()
+            df = pd.merge(df, all_dates, on='date', how='left')
+        else:
+            df['etf_close'] = np.nan
+    else:
+        df['etf_close'] = np.nan
 
     def check_data_order(df):
         # 1. 檢查 ID 是否為單調遞增
@@ -95,18 +111,18 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         amount = group["amount"].values.astype(float)
         amount_ln = np.log1p(group['amount'].values.astype(float))
         
-        # [優化 2] 處理法人可能存在的空值，避免 NaN 蔓延
-        vol_10 = SMA(volume, 10) * 10 + 1  # 加 1 避免分母為零
-        vol_5 = SMA(volume, 5) * 5 + 1
-        t_net_10 = SMA(group['Trust_Net'].values.astype(float), 10) * 10
-        t_net_5 = SMA(group['Trust_Net'].values.astype(float), 5) * 5
-        
-        #投信方向盤 (保留正負號，判斷是作帳還是結帳)
-        trust_in_10 = t_net_10 / vol_10
-        trust_in_5 = t_net_5 / vol_5
+        etf_close  = group['etf_close'].values.astype(float) if 'etf_close' in group else np.full(len(close), np.nan)
+        try:
+            beta_60 = BETA(close, etf_close, timeperiod=60)
+        except Exception:
+            beta_60 = np.full(len(close), np.nan)
+
+        # 法人動能
+        vol_20 = SMA(volume, 20) * 20 + 1
+        t_net_20 = SMA(group['Trust_Net'].values.astype(float), 20) * 20
+        trust_in_20 = t_net_20 / vol_20
 
         amount20 = SMA(amount_ln, 20)
-        amount_breakout_20  = amount / (SMA(amount,20) + 1e-9)
         amount_ema_20 = EMA(amount_ln, 20)
 
         time_idx = np.arange(n, dtype=float)
@@ -119,7 +135,6 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
         # 築底 : 1代表無窮遠離底部
         support_20 = 1 - (MIN(close, timeperiod=20) / (close + 1e-9))
-        support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
 
         sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
         sma20 = close / (SMA(close, timeperiod=20) + 1e-9)
@@ -136,19 +151,17 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         # ── 字典一次性寫回 DataFrame ──────────────────────────────
         group = group.copy()          # 避免 SettingWithCopyWarning
         cols = {
-            'trust_in_10': trust_in_10,
-            'trust_in_5': trust_in_5,
+            'trust_in_20': trust_in_20,
             'amount20': amount20,
             'amount_ema_20': amount_ema_20,
-            'a_breakout_20':amount_breakout_20,
             'breakout_20': breakout_20,
             'breakout_200': breakout_200,
             'support_20': support_20,
-            'support_200': support_200,
             'sma200': sma200,
             'sma20': sma20,
             'adx': adx,
             'kama': kama,
+            'beta_60': beta_60,
         }
         for col, arr in cols.items():
             group[col] = arr
@@ -223,24 +236,23 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         print(f'執行成交值流動性過濾> {AMOUNT_THRESHOLD}(千)...')
 
     features = [ 
-        #刪掉60日特徵 ("amount60","sma60","r2_60")
+        'beta_60',
 
         # 均線與技術指標
         "sma20", "sma200", "kama", "adx",
         
-
         # 流動性 (Log化)
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_10", "trust_in_5",
+        "trust_in_20",
         
         # 基本面
         "yoy_ma5_bias","yoy",
 
         #突破與築底
         "breakout_20", "breakout_200",
-        "support_20","support_200",
+        "support_20",
     ]
 
     print("正在執行特徵去極值處理...")

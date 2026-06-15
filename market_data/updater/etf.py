@@ -17,14 +17,27 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # ── 設定區 ──
 ETF_LIST = ['0050', '00631L', '00919', '0056', '00878']   # ← 未來只要在這裡加代號
-START_DATE = '2026-01-01'
+START_DATE = '2015-01-01'
 
 
-def update_etf(start_date=START_DATE):
+def update_etf():
     """
-    整批下載 ETF_LIST 中所有 ETF 的收盤價，
+    增量下載 ETF_LIST 中所有 ETF 的收盤價，
+    若有舊資料則只抓最後一日起算，
     輸出為寬表格式 (date, 0050, 00631L, ...) 至 etf.csv。
     """
+    import os
+    file_path = config.MARKET_DATA_DIR / "etf.csv"
+    
+    # 決定起始日期
+    existing_df = None
+    if os.path.exists(file_path):
+        existing_df = pd.read_csv(file_path)
+        existing_df['date'] = pd.to_datetime(existing_df['date']).dt.strftime('%Y-%m-%d')
+        start_date = existing_df['date'].max()
+    else:
+        start_date = START_DATE
+
     tickers = [f"{t}.TW" for t in ETF_LIST]
 
     try:
@@ -44,12 +57,10 @@ def update_etf(start_date=START_DATE):
         print("無法取得價格 (可能非開盤日)。")
         return
 
-    # yf.download 多 ticker 回傳 MultiIndex columns: (Price, Ticker)
     # 取 Close 層級
     if isinstance(raw.columns, pd.MultiIndex):
         df_close = raw['Close'].copy()
     else:
-        # 單一 ticker 時不會有 MultiIndex
         df_close = raw[['Close']].copy()
         df_close.columns = [f"{ETF_LIST[0]}.TW"]
 
@@ -70,21 +81,27 @@ def update_etf(start_date=START_DATE):
     for col in etf_cols:
         df_close[col] = df_close[col].astype(float).round(2)
 
-    # ffill 補齊缺值 (例如某 ETF 該日無交易)
+    # ffill 補齊缺值
     df_close[etf_cols] = df_close[etf_cols].ffill()
 
-    df_close = df_close.sort_values('date').reset_index(drop=True)
+    # 合併新舊資料
+    if existing_df is not None:
+        # 合併後去除重複的日期，保留新的 (keep='last')，以更新可能未完整的最後一日資料
+        df_combined = pd.concat([existing_df, df_close], ignore_index=True)
+        df_combined = df_combined.drop_duplicates(subset=['date'], keep='last')
+    else:
+        df_combined = df_close
+
+    df_combined = df_combined.sort_values('date').reset_index(drop=True)
 
     # 輸出
-    file_path = config.MARKET_DATA_DIR / "etf.csv"
-    df_close.to_csv(file_path, index=False, encoding='utf-8')
+    df_combined.to_csv(file_path, index=False, encoding='utf-8')
 
-    print(f"ETF 標竿資料庫同步成功! 共 {len(etf_cols)} 檔 ETF，{len(df_close)} 筆資料")
-    print('===================== [資料庫抽樣檢驗] =====================')
-    # for col in etf_cols:
-    #     print(f"  {col} 最新價: {df_close[col].iloc[-1]}")
-    print(df_close.tail(2))
-    print('===========================================================')
+    print(f"ETF 資料庫同步成功! 共 {len(etf_cols)} 檔 ETF，{len(df_combined)} 筆資料") 
+    # (本次下載 {len(df_close)} 筆)
+    # print('===================== [資料庫抽樣檢驗] =====================')
+    # print(df_combined.tail(2))
+    # print('===========================================================')
 
 
 if __name__ == "__main__":
