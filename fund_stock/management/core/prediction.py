@@ -172,4 +172,4 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
 if __name__ == "__main__":
     #print(search_stock('蜜望實', version='v33'))
-    prediction(version='v34', select_ranks=[c for c in range(1,6)])
+    prediction(version='v36', select_ranks=[c for c in range(1,6)])

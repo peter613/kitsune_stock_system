@@ -29,22 +29,13 @@ def update_etf():
     import os
     file_path = config.MARKET_DATA_DIR / "etf.csv"
     
-    # 決定起始日期
-    existing_df = None
-    if os.path.exists(file_path):
-        existing_df = pd.read_csv(file_path)
-        existing_df['date'] = pd.to_datetime(existing_df['date']).dt.strftime('%Y-%m-%d')
-        start_date = existing_df['date'].max()
-    else:
-        start_date = START_DATE
-
     tickers = [f"{t}.TW" for t in ETF_LIST]
 
     try:
         with redirect_stderr(io.StringIO()):
             raw = yf.download(
                 tickers,
-                start=start_date,
+                start=START_DATE,
                 auto_adjust=True,
                 progress=False,
                 threads=False,
@@ -84,25 +75,12 @@ def update_etf():
     # ffill 補齊缺值
     df_close[etf_cols] = df_close[etf_cols].ffill()
 
-    # 合併新舊資料
-    if existing_df is not None:
-        # 合併後去除重複的日期，保留新的 (keep='last')，以更新可能未完整的最後一日資料
-        df_combined = pd.concat([existing_df, df_close], ignore_index=True)
-        df_combined = df_combined.drop_duplicates(subset=['date'], keep='last')
-    else:
-        df_combined = df_close
-
-    df_combined = df_combined.sort_values('date').reset_index(drop=True)
+    df_close = df_close.sort_values('date').reset_index(drop=True)
 
     # 輸出
-    df_combined.to_csv(file_path, index=False, encoding='utf-8')
+    df_close.to_csv(file_path, index=False, encoding='utf-8')
 
-    print(f"ETF 資料庫同步成功! 共 {len(etf_cols)} 檔 ETF，{len(df_combined)} 筆資料") 
-    # (本次下載 {len(df_close)} 筆)
-    # print('===================== [資料庫抽樣檢驗] =====================')
-    # print(df_combined.tail(2))
-    # print('===========================================================')
-
+    print(f"ETF 資料庫同步成功! 最新日期 {df_close['date'].max()}，共{len(df_close)} 筆資料") 
 
 if __name__ == "__main__":
     update_etf()

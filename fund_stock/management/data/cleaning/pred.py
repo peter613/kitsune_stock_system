@@ -241,24 +241,25 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         final_predict_df = final_predict_df[final_predict_df['amount'] > AMOUNT_THRESHOLD].reset_index(drop=True)
         print(f'執行成交值流動性過濾> {AMOUNT_THRESHOLD}(千)...')
 
-    features = [ 
-        'beta_60',
+    features = [
+        # 均線
+        "sma20","sma200", 
 
-        # 均線與技術指標
-        "sma20", "sma200", "kama", "adx",
-        
-        # 流動性 (Log化)
+        #趨勢強度
+        "kama","adx",
+
+        # 流動性 (amount Log化)
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_20",
-        
-        # 基本面
-        "yoy_ma5_bias","yoy",'yoy_std_5',
+        "trust_in_10",
 
-        #突破與築底
+        # 基本面
+        "yoy",'rev_breakout_12',"rev_bias_3", 
+
+        # 位階
         "breakout_20", "breakout_200",
-        "support_20",
+        "support_20", "support_200",
     ]
 
     print("正在執行特徵去極值處理...")
@@ -270,4 +271,4 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260611')
+    create_prediction(specified_date='20260610')

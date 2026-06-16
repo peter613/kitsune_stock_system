@@ -47,17 +47,22 @@ UPDATEMENU_STYLE = dict(
 # 頁面 1：基金走勢
 # ──────────────────────────────────────────
 def page_subscriber_nav(df_equity: pd.DataFrame, name: str):
-    st.title(f"{name} 的基金走勢")
+    st.title(f"{name} 的權益")
 
     if df_equity.empty:
         st.info("尚無認購紀錄，或認購日尚未到達。")
         return
 
     latest  = df_equity.iloc[-1]
+    first   = df_equity.iloc[0]
     equity  = latest['equity']
     capital = latest['capital']
     pnl     = equity - capital
-    roi     = latest['roi']
+    
+    # 權益成長率 = 期末/期初權益 - 1
+    first_equity = first['equity']
+    equity_growth_rate = (equity / first_equity - 1) * 100 if first_equity > 0 else 0
+
     units   = latest['units']
     nav     = latest['nav_per_unit']
     net_cf  = latest['net_cashflow']
@@ -65,14 +70,13 @@ def page_subscriber_nav(df_equity: pd.DataFrame, name: str):
 
     # ── Metrics ──────────────────────────────────────────
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("當前權益",   f"${equity:,.0f}")
-    col2.metric("累積損益",   f"${pnl:,.0f}")
-    col3.metric("累積報酬",   f"{roi:.2f}%")
+    col1.metric("總權益",   f"${equity:,.0f}")
+    col2.metric("權益成長率",   f"{equity_growth_rate:.2f}%")
+    col3.metric("資本利得",   f"${pnl:,.0f}")
 
-    cf_label = "淨現金流入" if net_cf >= 0 else "淨現金流出"
     col4.metric(
-        cf_label,
-        f"${abs(net_cf):,.0f}",
+        "現金流量",
+        f"${net_cf:,.0f}",
         help=f"總投入：${capital:,.0f}\n\n總提領：${redeemed:,.0f}"
     )
 
@@ -100,18 +104,17 @@ def page_subscriber_nav(df_equity: pd.DataFrame, name: str):
         fig.add_trace(go.Scatter(
             x=df_w['date'], 
             y=df_w['equity'],
-            customdata=df_w['roi'],
             name="權益", visible=show,
             line=dict(color='#4F247E', width=2.5),
-            hovertemplate='權益：$%{y:,.0f}<br>報酬率：%{customdata:.2f}%<extra></extra>',
+            hovertemplate='權益：$%{y:,.0f}<extra></extra>',
         ), secondary_y=False)
 
-        # 成本線
+        # 成本線 (現金投入)
         fig.add_trace(go.Scatter(
             x=df_w['date'], y=df_w['capital'],
-            name="投入成本", visible=show,
-            line=dict(color='#68CCFD', width=1.5, dash='dot'),
-            hovertemplate='投入成本：$%{y:,.0f}<extra></extra>',
+            name="現金流量", visible=show,
+            line=dict(color='#68CCFD', width=2.0, dash='dot'),
+            hovertemplate='現金流量：$%{y:,.0f}<extra></extra>',
         ), secondary_y=False)
 
     # 按鈕 visible 控制
@@ -147,10 +150,10 @@ def page_subscriber_nav(df_equity: pd.DataFrame, name: str):
     )
 
 # ──────────────────────────────────────────
-# 頁面 2：月績效
+# 頁面 2：月紀錄
 # ──────────────────────────────────────────
 def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
-    st.title(f"{name} 的月績效")
+    st.title(f"{name} 的月紀錄")
 
     if df_equity.empty:
         st.info("尚無認購紀錄。")
@@ -166,8 +169,22 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
         .last()
         .reset_index()
     )
-    monthly['month_pnl'] = monthly['equity'] - monthly['equity'].shift(1).fillna(monthly['capital'].iloc[0])
-    monthly['month_roi'] = monthly['roi'] - monthly['roi'].shift(1).fillna(0)
+    monthly['month_equity_change'] = monthly['equity'] - monthly['equity'].shift(1).fillna(0)
+    monthly['month_cash_flow'] = monthly['capital'] - monthly['capital'].shift(1).fillna(0)
+    monthly['month_capital_gain'] = monthly['month_equity_change'] - monthly['month_cash_flow']
+    
+    # 依照要求：單月與累積增長率皆為 期末/期初權益 - 1
+    first_day_equity = df['equity'].iloc[0]
+    monthly['prev_equity'] = monthly['equity'].shift(1).fillna(first_day_equity)
+    
+    # 單月增長率 = 該月底權益 / 上月底(或期初)權益 - 1
+    monthly['month_equity_growth_rate'] = (monthly['equity'] / monthly['prev_equity'] - 1) * 100
+    monthly.loc[monthly['prev_equity'] == 0, 'month_equity_growth_rate'] = 0
+    
+    # 累積增長率 = 該月底權益 / 第一天期初權益 - 1
+    monthly['cum_equity_growth_rate'] = (monthly['equity'] / first_day_equity - 1) * 100
+    monthly.loc[first_day_equity == 0, 'cum_equity_growth_rate'] = 0
+    
     monthly['ym_str']    = monthly['ym'].astype(str)
 
     # ── 年份選單 ──────────────────────────────────────────
@@ -183,49 +200,53 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
     # ── 雙Y軸圖：左=單月損益(柱狀)，右=單月報酬率(折線) ──
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    bar_colors = [
-        '#4F247E' if v >= 0 else '#C0392B'
-        for v in df_year['month_pnl']
-    ]
+    custom_data = df_year[['equity', 'month_capital_gain', 'month_cash_flow']].values
 
-    # 單月損益（柱狀）
+    # 股票(資本利得) - 底層
     fig.add_trace(go.Bar(
         x=df_year['ym_str'],
-        y=df_year['month_pnl'],
-        customdata=df_year['month_roi'],
-        name="單月損益",
-        marker_color=bar_colors,
-        hovertemplate='損益：$%{y:,.0f}<br>報酬率：%{customdata:.2f}%<extra></extra>',
+        y=df_year['month_capital_gain'],
+        customdata=custom_data,
+        name="股票(資本利得)",
+        marker=dict(color='#4F247E', line=dict(width=0)), # 不刺眼的藍色, 取消描邊
+        hovertemplate='<b>%{x}</b><br>總權益：$%{customdata[0]:,.0f}<br>現金流量：$%{customdata[2]:,.0f}<br>資本利得：$%{customdata[1]:,.0f}<extra></extra>',
+    ))
+    # 現金流量 - 上層
+    fig.add_trace(go.Bar(
+        x=df_year['ym_str'],
+        y=df_year['month_cash_flow'],
+        customdata=custom_data,
+        name="現金流量",
+        marker=dict(color='#B3D4FF', line=dict(width=0)), # 淺藍色, 取消描邊
+        hovertemplate='<b>%{x}</b><br>總權益：$%{customdata[0]:,.0f}<br>現金流量：$%{customdata[2]:,.0f}<br>資本利得：$%{customdata[1]:,.0f}<extra></extra>',
     ))
 
     fig.add_hline(y=0, line_dash="dot", line_color="gray", line_width=1)
 
     fig.update_layout(
         template="plotly_dark",
-        hovermode="x",
+        hovermode="closest",
+        barmode='relative',
         showlegend=True,
         legend=dict(x=0.01, y=0.99),
         margin=dict(t=30),
         hoverlabel=dict(
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor="#4F247E",
-            font=dict(size=13, color="black"),
+            bgcolor="white",
+            bordercolor="#5A9BD4",
+            font=dict(size=15, color="black", family="Arial"),
         ),
         xaxis=dict(type='category'),
     )
-    fig.update_yaxes(title_text="單月損益 (TWD)", tickformat=",.0f",  secondary_y=False)
-    fig.update_yaxes(title_text="單月報酬率 (%)", tickformat=".2f",
-                     ticksuffix="%", showgrid=False,                  secondary_y=True)
+    fig.update_yaxes(title_text="資產增長 (TWD)", tickformat=",.0f")
 
     st.plotly_chart(fig, width='stretch')
 
     # ── 數字明細表 ────────────────────────────────────────
-    df_table = df_year[['ym_str', 'equity', 'month_pnl', 'month_roi', 'roi']].copy()
-    df_table = df_table.iloc[::-1].reset_index(drop=True)  # 加這行
-    df_table.columns = ['月份', '月底權益', '單月損益', '單月報酬率(%)', '累積報酬率(%)']
+    df_table = df_year[['ym_str', 'equity', 'month_equity_growth_rate', 'cum_equity_growth_rate']].copy()
+    df_table = df_table.iloc[::-1].reset_index(drop=True)
+    df_table.columns = ['月份', '月底權益', '單月增長率(%)', '累積增長率(%)']
     df_table['月底權益']     = df_table['月底權益'].map('${:,.0f}'.format)
-    df_table['單月損益']     = df_table['單月損益'].map('${:,.0f}'.format)
-    df_table['單月報酬率(%)'] = df_table['單月報酬率(%)'].map('{:.2f}%'.format)
-    df_table['累積報酬率(%)'] = df_table['累積報酬率(%)'].map('{:.2f}%'.format)
+    df_table['單月增長率(%)'] = df_table['單月增長率(%)'].map('{:.2f}%'.format)
+    df_table['累積增長率(%)'] = df_table['累積增長率(%)'].map('{:.2f}%'.format)
 
     st.dataframe(df_table, width='stretch', hide_index=True)
