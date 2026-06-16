@@ -517,4 +517,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
 
 if __name__ == "__main__":
     # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v35', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)
+    backtester(version='v36', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)

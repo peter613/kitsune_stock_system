@@ -118,9 +118,9 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
             beta_60 = np.full(len(close), np.nan)
 
         # 法人動能
-        vol_20 = SMA(volume, 20) * 20 + 1
-        t_net_20 = SMA(group['Trust_Net'].values.astype(float), 20) * 20
-        trust_in_20 = t_net_20 / vol_20
+        vol_10 = SMA(volume, 10) * 10 + 1
+        t_net_10 = SMA(group['Trust_Net'].values.astype(float), 10) * 10
+        trust_in_10 = t_net_10 / vol_10
 
         amount20 = SMA(amount_ln, 20)
         amount_ema_20 = EMA(amount_ln, 20)
@@ -135,6 +135,7 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
         # 築底 : 1代表無窮遠離底部
         support_20 = 1 - (MIN(close, timeperiod=20) / (close + 1e-9))
+        support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
 
         sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
         sma20 = close / (SMA(close, timeperiod=20) + 1e-9)
@@ -151,17 +152,17 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         # ── 字典一次性寫回 DataFrame ──────────────────────────────
         group = group.copy()          # 避免 SettingWithCopyWarning
         cols = {
-            'trust_in_20': trust_in_20,
+            'trust_in_10': trust_in_10,
             'amount20': amount20,
             'amount_ema_20': amount_ema_20,
             'breakout_20': breakout_20,
             'breakout_200': breakout_200,
             'support_20': support_20,
+            'support_200': support_200,
             'sma200': sma200,
             'sma20': sma20,
             'adx': adx,
             'kama': kama,
-            'beta_60': beta_60,
         }
         for col, arr in cols.items():
             group[col] = arr
@@ -181,7 +182,11 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
 
     df_revenue["date"] = pd.to_datetime(df_revenue["date"])
     df_revenue = df_revenue.sort_values(['id', 'date'])
-    df_revenue['yoy_ma5'] = df_revenue.groupby('id')['yoy'].transform(lambda x: x.rolling(window=5).mean())
+    
+    rolling_max_12 = df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=12, min_periods=12).max())
+    df_revenue['rev_breakout_12'] = df_revenue['month_revenue'] / rolling_max_12
+    
+    df_revenue['rev_bias_3'] = df_revenue['month_revenue'] / (df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=3).mean()) + 1e-9)
     df_revenue["merge_key"] = df_revenue["date"].dt.to_period("M").apply(lambda x: x + 1)
     df["merge_key"] = df["date"].dt.to_period("M")
 
@@ -191,15 +196,16 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     print("正在執行主表與營收表合併...")
     df = pd.merge(
         df,
-        df_revenue[["id", "merge_key", "mom", "yoy", "yoy_ma5"]],
+        df_revenue[["id", "merge_key", "mom", "yoy", "month_revenue", "rev_breakout_12", "rev_bias_3"]],
         on=["id", "merge_key"],
         how="left",
     )
 
     df["yoy"] = df.groupby("id")["yoy"].ffill()
     df["mom"] = df.groupby("id")["mom"].ffill()
-    df["yoy_ma5"] = df.groupby("id")["yoy_ma5"].ffill()
-    df['yoy_ma5_bias'] = df['yoy'] - df['yoy_ma5']
+    df["month_revenue"] = df.groupby("id")["month_revenue"].ffill()
+    df["rev_breakout_12"] = df.groupby("id")["rev_breakout_12"].ffill()
+    df["rev_bias_3"] = df.groupby("id")["rev_bias_3"].ffill()
 
     # [優化 4] 防禦機制：調降閾值以適應純科技股池
     date_counts = df["date"].value_counts()
@@ -248,7 +254,7 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         "trust_in_20",
         
         # 基本面
-        "yoy_ma5_bias","yoy",
+        "yoy_ma5_bias","yoy",'yoy_std_5',
 
         #突破與築底
         "breakout_20", "breakout_200",
@@ -264,4 +270,4 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260508')
+    create_prediction(specified_date='20260611')

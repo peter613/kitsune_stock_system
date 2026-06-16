@@ -53,10 +53,7 @@ def create_cbm(version=None):
     df = df.sort_values(['date', 'id']).reset_index(drop=True)
 
     feature_cols = [
-        #傳統beta因子
-        'beta_60',
-
-        # 均線與技術指標
+        # 均線
         "sma20","sma200", 
 
         #趨勢強度
@@ -66,14 +63,14 @@ def create_cbm(version=None):
         "amount20",
         
         # 籌碼與法人動能
-        "trust_in_20",
+        "trust_in_10",
 
         # 基本面
-        "yoy","yoy_ma5_bias",
+        "yoy",'rev_breakout_12',"rev_bias_3", 
 
-        #突破與築底
+        # 位階
         "breakout_20", "breakout_200",
-        "support_20",#"support_200",
+        "support_20", "support_200",
     ]
 
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
@@ -107,10 +104,10 @@ def create_cbm(version=None):
         #決定模型最小化損失目標
         loss_function='YetiRank',
         #決定模型什麼時候停，搭配early stopping
-        eval_metric='NDCG:top=3',
+        eval_metric='NDCG:top=5',
 
         #印出數據
-        custom_metric=['NDCG:top=3','PrecisionAt:top=3'],
+        custom_metric=['NDCG:top=5','PrecisionAt:top=5'],
         #每多少輪印進度
         verbose=200,
         random_seed=42,
@@ -135,4 +132,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v35')
+    create_cbm(version='v36')
