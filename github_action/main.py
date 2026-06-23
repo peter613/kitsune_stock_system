@@ -1,5 +1,10 @@
-import requests
 import os
+import sys
+
+# 將專案根目錄加入路徑，解決找不到 config 模組的問題
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import requests
 import config
 from dotenv import load_dotenv
 
