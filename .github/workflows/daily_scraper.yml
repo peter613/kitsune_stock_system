@@ -6,7 +6,7 @@ on:
   
   # 以下設定為 UTC 13:20，也就是台灣時間的晚上 21:20
   schedule:
-    - cron: '20 13 * * *'
+    - cron: '0 12 * * *'
 
 jobs:
   scrape-and-update:
