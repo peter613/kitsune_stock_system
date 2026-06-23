@@ -6,7 +6,6 @@ import os
 import config
 import questionary
 import shutil
-from fund_stock.management.dashboard.engine import load_data, calculate_settlement_data, generate_system_alerts
 """"
 未來投組比例，etf投組 : 量化投組 : 現金 = 60% : 30% : 10%
 etf投組， 00731(高息低波) : 00919 : 0056 = 3 : 1 : 1
@@ -21,10 +20,10 @@ cash (id = cash, label = 隨意(wage/capital))
 """
 
 # 匯入模組
-from market_data.updater.market import update_market_data
+from backup_db import backup
 from market_data.updater.etf import update_etf
 from market_data.updater.revenue import update_revenue
-from market_data.backup_database import backup
+from market_data.diagnose_db import diagnose
 from market_data.sync_data import sync
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
@@ -32,9 +31,7 @@ from fund_stock.management.core.backtest.analysis import bt_analysis
 from fund_stock.management.data.cleaning.train import create_training
 from fund_stock.management.data.cleaning.pred import create_prediction
 from fund_stock.management.core.create_cbm import create_cbm
-from fund_stock.management.journal.update_journal import update_journal
 from fund_stock.administration.update_navpu import update_quant
-from fund_stock.administration.backup_navpu import backup_navpu
 
 # =================
 # 系統工具定義(指令)
@@ -49,15 +46,11 @@ def sync_database():
     print('\n\n[3.] 更新基金帳務')
     update_quant()
 
-    print('\n\n[4.] 備份 NAVPU')
-    backup_navpu()
+    print('\n\n[4.] 備份資料庫')
+    backup()
 
     return f"\n\n資料庫已全面更新完畢。"
 
-def backup_data() -> str:
-    print(f"備份資料...")
-    backup()
-    return f"\n\n資料已成功備份。"
 
 def open_dashboard_fund() -> str:
     """啟動 Streamlit fund 視覺化儀表板/戰情室/dashboard。"""
@@ -124,22 +117,6 @@ def run_backtest(version: str, benchmark: str = '0050.TW') -> str:
     
     return f"版本 {version} 回測執行完畢，績效報告已產出。"
 
-def add_trade_record(stock_id: str, name: str, action: str, label: str, price: float, share: float, date: str = None) -> str:
-    """
-    將交易或出入金紀錄寫入 journal.csv。
-    """
-    result = update_journal(stock_id, name, action, label, price, share, date)
-    return result
-
-
-# ==========================================
-# 20%停損(第一頁)
-# ==========================================
-df_record, _, df_price, df_0050, _ = load_data()
-unrealized_data, _, _, _ = calculate_settlement_data(df_record, df_price)
-alerts = generate_system_alerts(df_record, df_price, df_0050, unrealized_data)
-os.system('cls')
-
 # ==========================================
 # 主程式 (終端機介面)
 # ==========================================
@@ -163,13 +140,6 @@ def main():
     time.sleep(0.3)
     type_effect(" >> WELCOME ARCHITECT")
     time.sleep(0.3)
-    if alerts:
-        type_effect(' >> RISK CONTROL : [ALERT]')
-        for msg in alerts:
-            type_effect(f'>> {msg}')
-    else:
-        type_effect(' >> RISK CONTROL : [SAFE]')
-    time.sleep(0.3)
 
     while True:
         print('\n')
@@ -192,27 +162,27 @@ def main():
             action_database = questionary.select(
                 "請選擇要執行的資料庫模組：\n",
                 choices=[
-                    "同步資料庫",
+                    "同步與備份資料庫",
                     "更新營收資料庫",
-                    "備份營收、申購、交易資料",
+                    "診斷資料庫",
                     "返回主選單"
                 ],
                 qmark="",
                 instruction=" "
             ).ask()
             
-            if action_database == "同步資料庫":
-                print("\n[更新資料庫]")
+            if action_database == "同步與備份資料庫":
+                print("\n[處理中...]")
                 res = sync_database()
                 print(f"{res}")
                     
             elif action_database == "更新營收資料庫":
-                print("\n[更新營收資料庫]")
+                print("\n[更新中...]")
                 update_revenue()
 
-            elif action_database == "備份營收、申購、交易資料":
-                print("\n[備份至supabase]")
-                backup_data()
+            elif action_database == "診斷資料庫":
+                print("\n[診斷中...]")
+                diagnose()
 
         elif action_home == "量化模組":
             action_quant = questionary.select(

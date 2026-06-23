@@ -42,12 +42,24 @@ def cloud_has_data(bucket_name: str) -> bool:
         return False
 
 
-def backup_navpu():
+def backup():
+    print("開始備份個人帳務與營收資料到雲端...")
     responses = []
+
     for local, remote in [
-        (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/navpu.csv","/navpu.csv"),
+        (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/navpu.csv",                  "/navpu.csv"),
+        (f"{config.MARKET_DATA_DIR}/revenue.csv",                              "/revenue.csv"),
+        (f"{config.STOCK_JOURNAL_DIR}/journal.csv",                            "/trading_record.csv"),
+        (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/transaction.csv",            "/transaction.csv"),
     ]:
-        responses.append(backup_to_supabase('stock_data_backup', local, remote))
+        if os.path.exists(local):
+            responses.append(backup_to_supabase('stock_data_backup', local, remote))
+        else:
+            print(f"找不到本地檔案: {local}")
+
+    if responses:
+        print("\n備份作業完畢" if all(responses) else "\n部分資料上傳失敗")
+
 
 if __name__ == '__main__':
-    backup_navpu()
+    backup()

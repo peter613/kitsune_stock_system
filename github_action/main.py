@@ -96,7 +96,7 @@ def run_daily_job():
                 f"日期：{result.get('date')}\n"
                 f"狀態：{result.get('status')}\n\n"
                 f"‧ 獲取筆數：{result.get('rows')} 筆\n"
-                f"‧ NaN 數量：{result.get('nans')}\n\n"
+                f"‧ NaN 數量：{result.get('nans')}\n"
                 f"‧ {result.get('action')}"
             )
             

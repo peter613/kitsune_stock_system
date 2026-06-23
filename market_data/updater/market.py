@@ -282,7 +282,7 @@ def update_market_data(specific_date=None):
     # 2. Fetch Data
     df_new = get_data(today_str)
     if df_new is None or df_new.empty:
-        return {"status": "失敗", "error": "無新資料 (市場休市或爬蟲異常)。"}
+        return {"status": "失敗", "error": "無資料 (市場休市或爬蟲異常)。"}
 
     df_new['date'] = pd.to_datetime(standard_date_str)
     
