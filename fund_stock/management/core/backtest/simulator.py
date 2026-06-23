@@ -116,7 +116,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 # 主回測函式
 # ──────────────────────────────────────────────
 
-def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_open=False):
+def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open=False):
     if select_rank is None:
         select_rank = list(range(1, 6))
 
@@ -127,7 +127,7 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
     SINGLE_TRADE_CAP = 0.80    # 單筆最高獲利封頂 (80%)
-    AMOUNT_ON         = True
+    AMOUNT_ON         = True    
     AMOUNT_THRESHOLD  = 100000 #1.0億
 
     rank_str = ','.join(map(str, select_rank))
@@ -398,19 +398,18 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
             etf_df = pd.read_csv(etf_path)
             etf_df['date'] = pd.to_datetime(etf_df['date'])
             
-            ticker = benchmark.replace('.TW', '')
-            if ticker in etf_df.columns:
+            if benchmark in etf_df.columns:
                 # 篩選日期
                 bdf = etf_df[(etf_df['date'] >= start_d) & (etf_df['date'] <= end_d)].copy()
                 if not bdf.empty:
                     bdf = bdf.set_index('date')
-                    close = bdf[ticker]
+                    close = bdf[benchmark]
                     benchmark_nav    = close / close.iloc[0]
                     bench_total_ret  = benchmark_nav.iloc[-1] - 1.0
                     n_years          = (bdf.index[-1] - bdf.index[0]).days / 365.25
                     bench_annual_ret = (benchmark_nav.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
             else:
-                print(f"警告：etf.csv 中找不到 {ticker} 欄位。")
+                print(f"警告：etf.csv 中找不到 {benchmark} 欄位。")
         else:
             print(f"找不到 {etf_path}，跳過對照組。")
     except Exception as e:
@@ -517,4 +516,4 @@ def backtester(version, select_rank=None, benchmark='00631L.TW', entry_on_next_o
 
 if __name__ == "__main__":
     # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v36', select_rank=list(range(1, 4)), benchmark='00631L.TW', entry_on_next_open=False)
+    backtester(version='v37', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)

@@ -161,7 +161,7 @@ def get_available_versions():
     if not os.path.exists(config.STOCK_CBM_DIR): return []
     versions = [d for d in os.listdir(config.STOCK_CBM_DIR)
                 if os.path.isdir(config.STOCK_CBM_DIR / d) and d.startswith('v')]
-    return sorted(versions)
+    return sorted(versions)[-3:]
 
 def main():
     print('')

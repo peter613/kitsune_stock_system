@@ -101,12 +101,10 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         amount     = group['amount'].values.astype(float)
         trust_net  = group['Trust_Net'].values.astype(float)
         foreign_net= group['Foreign_Net'].values.astype(float)
-        etf_close  = group['etf_close'].values.astype(float) if 'etf_close' in group else np.full(len(close), np.nan)
 
         # ── 均線 ──────────────────────────────────────────────
-        sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
-        sma20  = close / (SMA(close, timeperiod=20)  + 1e-9)
-        #sma5  = close / (SMA(close, timeperiod=5)  + 1e-9)
+        sma60 = close / (SMA(close, timeperiod=60) + 1e-9)
+        sma120  = close / (SMA(close, timeperiod=120)  + 1e-9)
 
         # ── 計算個股kama ──────────
         try:
@@ -116,61 +114,66 @@ def create_training(version='v14', years_10=True, stock_filter=True):
 
         # ── 技術指標 ──────────────────────────────────────────
         adx = ADX(high, low, close, timeperiod=14)
-        #atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
 
-        # ── 成交值均線 ────────────────────────────────────────
+        # ── 成交值 ────────────────────────────────────────
         amount_ln  = np.log1p(amount)
-        amount20 = SMA(amount_ln, 20)
-        amount_ema_20 = EMA(amount_ln, 20)
+        amount_20 = SMA(amount_ln, timeperiod=20)
+        amount_ema_20 = EMA(amount_ln, timeperiod=20)
 
-        # ── 突破 / 支撐  (範圍 0~1)───────────────────────────────────────
-        # 價格突破 : 1代表在最高點
-        breakout_20 = close / (MAX(close, timeperiod=20) + 1e-9)
+        # ── 突破 / 支撐 / 區間箱型 (Robust Box) ──────────────────
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
-        # 價格築底 : 1代表無窮遠離底部
-        support_20 = 1 - (MIN(close, timeperiod=20) / (close + 1e-9))
-        support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
+        
+        # 透過 85% 與 15% 分位數，完美過濾避雷針與下影線假突破，找出真實的支撐壓力線
+        box_res_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.85).values
+        box_sup_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.15).values
+        
+        # 距離近期天花板多遠？ (>1 代表真突破)
+        resistance_20 = close / (box_res_20 + 1e-9)
+        # 距離近期地板多遠？ (接近1 代表回踩支撐)
+        support_20 = close / (box_sup_20 + 1e-9)
 
         # ── 法人籌碼 ──────────────────────────────────────────
         trust_period = 10
-        vol_period   = SMA(volume, trust_period) * trust_period + 1
-        t_net_period = SMA(trust_net, trust_period) * trust_period
-        trust_in_10 = t_net_period / vol_period
+        # 1. 先建立一個「是否為 0」的陣列（1 代表是 0，0 代表不是 0）
+        is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
+        zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
+        # 判斷過去 10 天內為 0 的天數是否 >= 7
+        trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
 
-        close_pct = np.zeros_like(close)
-        close_pct[0] = np.nan
-        close_pct[1:] = (close[1:] - close[:-1]) / (close[:-1] + 1e-9)
+        # 法人籌碼計算完成
 
-        # ── 趨勢相關 ──────────────────────────────────────────
-        time_idx = np.arange(len(close), dtype=float)
-        r_20     = CORREL(close, time_idx, timeperiod=20)
-        r_20_abs = np.abs(r_20)
-
-        # ── 1. 計算個股每日報酬率 ──────────────────────────────
-        daily_return = np.empty(len(close))
-        daily_return[0] = 0
-        daily_return[1:] = (close[1:] / (close[:-1] + 1e-9)) - 1
-
-        # ── 計算 20 日實際報酬 ──────────────────
+        # ── 計算 20 日實際報酬 (預測標籤用) ──────────────────
         close_shifted = np.empty(len(close))
         close_shifted[:-20] = close[20:]
         close_shifted[-20:] = np.nan
         return_20d = (close_shifted / (close + 1e-9)) - 1
+        
+        # ── 計算過去 20 日與 60 日歷史報酬 (計算動能排名用) ──────────────────
+        close_past = np.empty(len(close))
+        close_past[20:] = close[:-20]
+        close_past[:20] = np.nan
+        hist_return_20 = (close / (close_past + 1e-9)) - 1
+
+        close_past_60 = np.empty(len(close))
+        close_past_60[60:] = close[:-60]
+        close_past_60[:60] = np.nan
+        hist_return_60 = (close / (close_past_60 + 1e-9)) - 1
 
         # ── 一次性寫回 DataFrame ──────────────────────────────
         group = group.copy()          # 避免 SettingWithCopyWarning
         cols = {
-            'sma200'        : sma200,
-            'sma20'         : sma20,
             'kama'          : kama,
             'adx'           : adx,
-            'amount20'      : amount20,
+            'sma60'         : sma60,
+            'sma120'        : sma120,
+            'amount_20'     : amount_20,
             'amount_ema_20' : amount_ema_20,
-            'breakout_20'   : breakout_20,
             'breakout_200'  : breakout_200,
+            'resistance_20' : resistance_20,
             'support_20'    : support_20,
-            'support_200'   : support_200,
-            'trust_in_10'   : trust_in_10,
+            'trust_in'      : trust_in,
+            'hist_return_20': hist_return_20,
+            'hist_return_60': hist_return_60,
             'return_20d'    : return_20d,
         }
         for col, arr in cols.items():
@@ -193,6 +196,8 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print("正在合併營收...")
     
     df_revenue = df_revenue.sort_values(['id', 'date'])
+    #避免相除問題，將月營收設定下限為 1 元（台股有負數與零值營收）
+    df_revenue['month_revenue'] = df_revenue['month_revenue'].clip(lower=1.0)
 
     # 營收突破/創高
     rolling_max_12 = df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=12, min_periods=12).max())
@@ -200,8 +205,6 @@ def create_training(version='v14', years_10=True, stock_filter=True):
 
     # 低熵營收動能解法：單月絕對金額 / 過去N個月平均金額
     df_revenue['rev_bias_3'] = df_revenue['month_revenue'] / (df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=3).mean()) + 1e-9)
-    df_revenue['rev_bias_6'] = df_revenue['month_revenue'] / (df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=6).mean()) + 1e-9)
-    df_revenue['rev_bias_12'] = df_revenue['month_revenue'] / (df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=12).mean()) + 1e-9)
 
     # 合併營收
     df_revenue["merge_key"] = df_revenue["date"].dt.to_period("M").apply(lambda x: x + 1)
@@ -209,14 +212,14 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     
     df = pd.merge(
         df,
-        df_revenue[["id", "merge_key", "mom", "yoy", "month_revenue", 'rev_breakout_12', 'rev_bias_3', 'rev_bias_6', 'rev_bias_12']],
+        df_revenue[["id", "merge_key", "mom", "yoy", "month_revenue", 'rev_breakout_12', 'rev_bias_3']],
         on=["id", "merge_key"],
         how="left",
     )
 
 
     # 數值填補與市值對數化
-    for col in ["yoy", "mom", "month_revenue", 'rev_breakout_12', 'rev_bias_3', 'rev_bias_6', 'rev_bias_12']:
+    for col in ["yoy", "mom", "month_revenue", 'rev_breakout_12', 'rev_bias_3']:
         df[col] = df.groupby("id")[col].ffill()
 
     if years_10:
@@ -240,9 +243,19 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     final_df = final_df[final_df['liq_rank'] <= (final_df['day_count'] / 3)].copy()
 
     # ---------------------------------------------------------
-    # 7. 去極值與標籤排名 (Labeling)
+    # 7. 去極值與標籤排名 (Labeling) 與 截面排名特徵
     # ---------------------------------------------------------
-    print("進行特徵淨化 (Clipping) 與標籤生成...")
+    print("進行特徵淨化 (Clipping)、截面排名生成與標籤生成...")
+    
+    # 在同一個截面(日期)下，將成交值轉為百分位數 (0~1區間的四分位距概念)
+    final_df['amount_rank'] = final_df.groupby('date')['amount_20'].rank(pct=True)
+    
+    # 【短期聖杯】截面相對強度排名 (Cross-Sectional RS Rank 20)
+    final_df['rs_rank_20'] = final_df.groupby('date')['hist_return_20'].rank(pct=True)
+
+    # 【極致動能】中期相對強度排名 (Cross-Sectional RS Rank 60)
+    final_df['rs_rank_60'] = final_df.groupby('date')['hist_return_60'].rank(pct=True)
+
     growth_cols = ['mom', 'yoy']
     for col in growth_cols:
         final_df[col] = final_df[col].clip(lower=-100.0, upper=100.0)
@@ -260,4 +273,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v36', years_10=True, stock_filter=True)
+    create_training(version='v37', years_10=True, stock_filter=True)

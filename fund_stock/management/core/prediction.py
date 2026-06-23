@@ -95,17 +95,31 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     
     print(f"正在載入模型: {MODEL_FILE}")
     if not os.path.exists(MODEL_FILE):
-        return f"❌ 錯誤：找不到模型檔案 {MODEL_FILE}"
+        error_msg = f"❌ 錯誤：找不到模型檔案 {MODEL_FILE}"
+        print(error_msg)
+        return error_msg
 
-    model = CatBoostRanker()
-    model.load_model(MODEL_FILE)
-    feature_cols = model.feature_names_
+    try:
+        model = CatBoostRanker()
+        model.load_model(MODEL_FILE)
+        feature_cols = model.feature_names_
+    except Exception as e:
+        error_msg = f"❌ 錯誤：載入模型失敗 ({e})"
+        print(error_msg)
+        return error_msg
 
     # 2. 資料讀取
     if not os.path.exists(DATA_FILE):
-        return f"❌ 錯誤：找不到資料檔案 {DATA_FILE}"
+        error_msg = f"❌ 錯誤：找不到資料檔案 {DATA_FILE}"
+        print(error_msg)
+        return error_msg
 
-    df = pd.read_csv(DATA_FILE)
+    try:
+        df = pd.read_csv(DATA_FILE)
+    except Exception as e:
+        error_msg = f"❌ 錯誤：讀取 {DATA_FILE} 失敗 ({e})"
+        print(error_msg)
+        return error_msg
     df['date'] = pd.to_datetime(df['date'])
     latest_date = df['date'].max()
 
@@ -120,7 +134,9 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
     missing_cols = [c for c in feature_cols if c not in target_df.columns]
     if missing_cols:
-        return f"目前的 pred.csv 缺少模型 ({version}) 所需的特徵：{missing_cols}。請重新執行特徵工程腳本。"
+        error_msg = f"❌ 致命錯誤：目前的 pred.csv 缺少模型 ({version}) 所需的特徵：\n{missing_cols}\n\n💡 解決方案：請先執行 train.py 產生新特徵，再執行 create_cbm.py 重新訓練模型！"
+        print(error_msg)
+        return error_msg
     
     scores = model.predict(target_df[feature_cols])
     target_df['predict_score'] = scores 
@@ -166,10 +182,16 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     prediction_dir = config.get_version_dir(config.STOCK_PREDICTION_REPORT_DIR, version)
     file_name = f'{datetime.now().strftime("%Y-%m-%d")}.csv'
     output_dir = prediction_dir / file_name
-    
-    top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')
-    print(f"\n預測結果已儲存至: {output_dir}")
+    try:
+        top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')
+        print(f"\n預測結果已成功儲存至: {output_dir}")
+    except PermissionError:
+        print(f"\n錯誤：無法儲存檔案。請確認 {file_name} 是否正被 Excel 或其他程式開啟！")
+    except Exception as e:
+        print(f"\n錯誤：儲存檔案時發生例外狀況 ({e})")
 
 if __name__ == "__main__":
-    #print(search_stock('蜜望實', version='v33'))
-    prediction(version='v36', select_ranks=[c for c in range(1,6)])
+    #print(search_stock('台光電', version='v33'))
+    result = prediction(version='v37', select_ranks=[c for c in range(1,6)])
+    if isinstance(result, str):
+        print(result)

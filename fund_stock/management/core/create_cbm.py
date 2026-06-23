@@ -53,24 +53,22 @@ def create_cbm(version=None):
     df = df.sort_values(['date', 'id']).reset_index(drop=True)
 
     feature_cols = [
-        # 均線
-        "sma20","sma200", 
+        # 趨勢強度
+        "kama", "adx",
 
-        #趨勢強度
-        "kama","adx",
-
-        # 流動性 (amount Log化)
-        "amount20",
+        # 流動性與動能排名 
+        "amount_rank",
+        'rs_rank_20', 'rs_rank_60',
         
         # 籌碼與法人動能
-        "trust_in_10",
+        "trust_in",
 
         # 基本面
-        "yoy",'rev_breakout_12',"rev_bias_3", 
+        "yoy", 'rev_breakout_12', "rev_bias_3", 
 
         # 位階
-        "breakout_20", "breakout_200",
-        "support_20", "support_200",
+        "breakout_200",
+        'resistance_20', 'support_20',
     ]
 
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
@@ -97,7 +95,7 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=10000,
+        iterations=8000,
         learning_rate=0.001,
         depth=6,
         #early_stopping_rounds=4000,
@@ -132,4 +130,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v36')
+    create_cbm(version='v37')

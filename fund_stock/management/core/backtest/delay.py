@@ -383,7 +383,7 @@ def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
-    VERSION     = 'v36'
+    VERSION     = 'v37'
     SELECT_RANK = list(range(1, 4))
 
     results = []

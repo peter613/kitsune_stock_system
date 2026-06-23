@@ -110,59 +110,53 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         volume = group["volume"].values.astype(float)
         amount = group["amount"].values.astype(float)
         amount_ln = np.log1p(group['amount'].values.astype(float))
-        
-        etf_close  = group['etf_close'].values.astype(float) if 'etf_close' in group else np.full(len(close), np.nan)
-        try:
-            beta_60 = BETA(close, etf_close, timeperiod=60)
-        except Exception:
-            beta_60 = np.full(len(close), np.nan)
+        trust_net = group['Trust_Net'].values.astype(float)
 
-        # 法人動能
-        vol_10 = SMA(volume, 10) * 10 + 1
-        t_net_10 = SMA(group['Trust_Net'].values.astype(float), 10) * 10
-        trust_in_10 = t_net_10 / vol_10
-
-        amount20 = SMA(amount_ln, 20)
-        amount_ema_20 = EMA(amount_ln, 20)
-
-        time_idx = np.arange(n, dtype=float)
-        r_20 = CORREL(close, time_idx, timeperiod=20)
-        r_20_abs = np.abs(r_20)
-
-        # ── 突破 / 支撐  (範圍 0~1)───────────────────────────────────────
-        # 突破 : 1代表在最高點
-        breakout_20 = close / (MAX(close, timeperiod=20) + 1e-9)
-        breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
-        # 築底 : 1代表無窮遠離底部
-        support_20 = 1 - (MIN(close, timeperiod=20) / (close + 1e-9))
-        support_200 = 1 - (MIN(close, timeperiod=200) / (close + 1e-9))
-
-        sma200 = close / (SMA(close, timeperiod=200) + 1e-9)
-        sma20 = close / (SMA(close, timeperiod=20) + 1e-9)
-
-        adx = ADX(high, low, close, timeperiod=14)
-        
         try:
             kama = close / (KAMA(close, timeperiod=30) + 1e-9)
-        except:
-            kama = np.full(n, np.nan)
+        except Exception:
+            kama = np.full(len(close), np.nan)
 
-        #atr = ATR(high, low, close, timeperiod=14) / (close + 1e-9)
+        adx = ADX(high, low, close, timeperiod=14)
 
-        # ── 字典一次性寫回 DataFrame ──────────────────────────────
-        group = group.copy()          # 避免 SettingWithCopyWarning
+        amount_20 = SMA(amount_ln, timeperiod=20)
+        amount_ema_20 = EMA(amount_ln, timeperiod=20)
+
+        breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
+        
+        box_res_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.85).values
+        box_sup_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.15).values
+        
+        resistance_20 = close / (box_res_20 + 1e-9)
+        support_20 = close / (box_sup_20 + 1e-9)
+
+        trust_period = 10
+        is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
+        zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
+        trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
+
+        close_past = np.empty(len(close))
+        close_past[20:] = close[:-20]
+        close_past[:20] = np.nan
+        hist_return_20 = (close / (close_past + 1e-9)) - 1
+
+        close_past_60 = np.empty(len(close))
+        close_past_60[60:] = close[:-60]
+        close_past_60[:60] = np.nan
+        hist_return_60 = (close / (close_past_60 + 1e-9)) - 1
+
+        group = group.copy()
         cols = {
-            'trust_in_10': trust_in_10,
-            'amount20': amount20,
-            'amount_ema_20': amount_ema_20,
-            'breakout_20': breakout_20,
-            'breakout_200': breakout_200,
-            'support_20': support_20,
-            'support_200': support_200,
-            'sma200': sma200,
-            'sma20': sma20,
-            'adx': adx,
-            'kama': kama,
+            'kama'          : kama,
+            'adx'           : adx,
+            'amount_20'     : amount_20,
+            'amount_ema_20' : amount_ema_20,
+            'breakout_200'  : breakout_200,
+            'resistance_20' : resistance_20,
+            'support_20'    : support_20,
+            'trust_in'      : trust_in,
+            'hist_return_20': hist_return_20,
+            'hist_return_60': hist_return_60,
         }
         for col, arr in cols.items():
             group[col] = arr
@@ -183,6 +177,10 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     df_revenue["date"] = pd.to_datetime(df_revenue["date"])
     df_revenue = df_revenue.sort_values(['id', 'date'])
     
+    # 防禦：避免負數/零值營收造成除法符號反轉或爆炸
+    # 台股有 338 筆負數營收（銷貨退回）與 1542 筆零值，必須鎖定下限
+    df_revenue['month_revenue'] = df_revenue['month_revenue'].clip(lower=1.0)
+
     rolling_max_12 = df_revenue.groupby('id')['month_revenue'].transform(lambda x: x.rolling(window=12, min_periods=12).max())
     df_revenue['rev_breakout_12'] = df_revenue['month_revenue'] / rolling_max_12
     
@@ -231,6 +229,11 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     gc.collect()
 
     
+    print("處理截面特徵 (Cross-Sectional)...")
+    final_predict_df["amount_rank"] = final_predict_df["amount_20"].rank(pct=True)
+    final_predict_df["rs_rank_20"] = final_predict_df["hist_return_20"].rank(pct=True)
+    final_predict_df["rs_rank_60"] = final_predict_df["hist_return_60"].rank(pct=True)
+
     print("執行EMA成交值流動性過濾 (保留Top 1/3)...")
     final_predict_df["day_count"] = len(final_predict_df)
     final_predict_df["liq_rank"] = final_predict_df["amount_ema_20"].rank(ascending=False)
@@ -242,24 +245,22 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         print(f'執行成交值流動性過濾> {AMOUNT_THRESHOLD}(千)...')
 
     features = [
-        # 均線
-        "sma20","sma200", 
+        # 趨勢強度
+        "kama", "adx",
 
-        #趨勢強度
-        "kama","adx",
-
-        # 流動性 (amount Log化)
-        "amount20",
+        # 流動性與動能排名 
+        "amount_rank",
+        'rs_rank_20', 'rs_rank_60',
         
         # 籌碼與法人動能
-        "trust_in_10",
+        "trust_in",
 
         # 基本面
-        "yoy",'rev_breakout_12',"rev_bias_3", 
+        "yoy", 'rev_breakout_12', "rev_bias_3", 
 
         # 位階
-        "breakout_20", "breakout_200",
-        "support_20", "support_200",
+        "breakout_200",
+        'resistance_20', 'support_20',
     ]
 
     print("正在執行特徵去極值處理...")

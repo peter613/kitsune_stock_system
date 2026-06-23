@@ -7,7 +7,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
     "pandas",
-    "yfinance",
+    "yfinance>=1.4.1",
     "catboost",
     "plotly",
     "streamlit",

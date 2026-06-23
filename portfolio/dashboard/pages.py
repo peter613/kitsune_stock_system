@@ -188,7 +188,7 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
     monthly['ym_str']    = monthly['ym'].astype(str)
 
     # ── 年份選單 ──────────────────────────────────────────
-    years = sorted(monthly['date'].dt.year.unique(), reverse=True)
+    years = sorted(monthly['date'].dt.year.dropna().astype(int).unique(), reverse=True)
     selected_year = st.selectbox("選擇年份", years)
 
     df_year = monthly[monthly['date'].dt.year == selected_year].copy()
