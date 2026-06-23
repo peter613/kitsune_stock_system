@@ -23,6 +23,9 @@ def download_from_supabase(bucket_name: str, supabase_file_path: str, local_file
         # 下載檔案資料 (會回傳 bytes)
         res = supabase.storage.from_(bucket_name).download(supabase_file_path)
         
+        # 確保本地資料夾存在，解決 GitHub Actions 因為資料夾是空的而報錯的問題
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        
         # 寫入本地檔案
         with open(local_file_path, "wb") as f:
             f.write(res)
