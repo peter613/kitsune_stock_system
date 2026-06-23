@@ -4,9 +4,9 @@ on:
   # 支援手動觸發 (讓您可以在 GitHub 網頁上直接按按鈕測試)
   workflow_dispatch:
   
-  # 台灣時間的晚上 20:00
+  # 以下設定為 UTC 13:20，也就是台灣時間的晚上 21:20 (僅週一至週五執行)
   schedule:
-    - cron: '0 12 * * *'
+    - cron: '20 13 * * 1-5'
 
 jobs:
   scrape-and-update:
