@@ -25,6 +25,7 @@ from market_data.updater.market import update_market_data
 from market_data.updater.etf import update_etf
 from market_data.updater.revenue import update_revenue
 from market_data.backup_database import backup
+from market_data.sync_data import sync
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
 from fund_stock.management.core.backtest.analysis import bt_analysis
@@ -38,23 +39,16 @@ from fund_stock.administration.backup_navpu import backup_navpu
 # =================
 # 系統工具定義(指令)
 # =================
-def update_database(backfill_date: str = None) -> str:
-    if backfill_date:
-        print(f"\n回補指定日期: {backfill_date}")
-    else:
-        today_weekday = datetime.now().weekday()
-        if today_weekday >= 5:
-            return "今日為週末（非交易日），自動跳過資料更新程序。"
-        print('執行每日更新...')
-        
-    print('\n\n[1.] 更新 ETF')
+def sync_database():
+    print('\n\n[1.] 下載 ETF')
     update_etf()
     
-    print('\n\n[2.] 更新股市')
-    update_market_data(backfill_date)
+    print('\n\n[2.] 同步 股市')
+    sync()
 
     print('\n\n[3.] 更新基金帳務')
     update_quant()
+
     print('\n\n[4.] 備份 NAVPU')
     backup_navpu()
 
@@ -198,34 +192,26 @@ def main():
             action_database = questionary.select(
                 "請選擇要執行的資料庫模組：\n",
                 choices=[
-                    "更新今日股票資料庫",
-                    "回補股票資料庫",
+                    "同步資料庫",
                     "更新營收資料庫",
-                    "資料庫備份",
+                    "備份營收、申購、交易資料",
                     "返回主選單"
                 ],
                 qmark="",
                 instruction=" "
             ).ask()
             
-            if action_database == "更新今日股票資料庫":
+            if action_database == "同步資料庫":
                 print("\n[更新資料庫]")
-                res = update_database()
+                res = sync_database()
                 print(f"{res}")
-            
-            elif action_database == "回補股票資料庫":
-                date_str = questionary.text("請輸入要回補的日期 (如 20231001):",qmark="",instruction=" ").ask()
-                if date_str:
-                    print(f"\n[回補資料庫，指定日期: {date_str}]")
-                    res = update_database(backfill_date=date_str)
-                    print(f"{res}")
                     
             elif action_database == "更新營收資料庫":
                 print("\n[更新營收資料庫]")
                 update_revenue()
 
-            elif action_database == "資料庫備份":
-                print("\n[備份至supabase(market & revenue)]")
+            elif action_database == "備份營收、申購、交易資料":
+                print("\n[備份至supabase]")
                 backup_data()
 
         elif action_home == "量化模組":

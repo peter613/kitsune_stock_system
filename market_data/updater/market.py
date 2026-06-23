@@ -265,104 +265,66 @@ def get_data(date_str):
     final_df = pd.concat(valid_dfs, ignore_index=True)
     return final_df
 
-# ==========================================
-# Part 3: 主程式
-# ==========================================
 def update_market_data(specific_date=None):
-    # 1. 統一狀態賦值：取得字串與 datetime 物件
+    # 1. Date setup
     if specific_date:
-        # 將可能存在的 '-' 移除，統一以 '%Y%m%d' 格式解析
         clean_date = specific_date.replace('-', '')
         target_dt = datetime.strptime(clean_date, '%Y%m%d')
-        print(f"回補指定日期資料...")
     else:
-        # 每日更新模式
         target_dt = datetime.now()
 
-    # 週末防呆
     if target_dt.weekday() >= 5:
-        print(f"指定日期為週{['六','日'][target_dt.weekday()-5]}，市場休市，自動取消更新。")
-        return
+        return {"status": "略過", "error": f"今日為週末 (週{['六','日'][target_dt.weekday()-5]})，市場休市。"}
 
-    # 轉換成爬蟲需要的 YYYYMMDD 格式
     today_str = target_dt.strftime('%Y%m%d') 
-    # 轉換回 YYYY-MM-DD 供最後存檔比對使用
     standard_date_str = target_dt.strftime('%Y-%m-%d') 
 
-    print(f"執行Kitsune crawler，日期: {today_str}...")
-    
-    # 1. 啟動雙引擎抓取
+    # 2. Fetch Data
     df_new = get_data(today_str)
-
     if df_new is None or df_new.empty:
-        print('抓取失敗或無新資料，程式中斷(請確認當日是否開市)。')
-        return
+        return {"status": "失敗", "error": "無新資料 (市場休市或爬蟲異常)。"}
 
-    # 統一將 date 轉為 YYYY-MM-DD 格式，方便閱讀與排序
-    df_new['date'] = pd.to_datetime(standard_date_str) # 直接賦值標準格式
+    df_new['date'] = pd.to_datetime(standard_date_str)
+    
+    # 3. Data Validation Metrics
     new_count = len(df_new)
-
-    # 每日爬蟲 NaN 檢查
-    print(f"\n今天nan值分布:")
-    nan_dist = df_new.isna().sum()
-    print(nan_dist[nan_dist > 0].to_string() if nan_dist.sum() > 0 else "無缺失值")
-
-    # 2. 資料庫讀取與更新邏輯
+    nan_count = int(df_new.isna().sum().sum())
+    
+    # 4. Merge with Database
     if os.path.exists(FILE_NAME):
         try:
             df_db = pd.read_parquet(FILE_NAME)
             df_db['date'] = pd.to_datetime(df_db['date'])
-            
-            # 紀錄合併前的總筆數
-            old_total_count = len(df_db)
-            
-            # 剔除舊資料中「與這次抓取同日期」的數據 (防止重複寫入)
-            df_db = df_db[df_db['date'] != df_new['date'].iloc[0]]
-
-            # 上筆資料大小
-            last_update_count = 0
-            if not df_db.empty:
-                last_date = df_db['date'].max()
-                last_update_count = len(df_db[df_db['date'] == last_date])
-
-            # 合併新舊資料
+            df_db = df_db[df_db['date'] != df_new['date'].iloc[0]] # 去重
             df_final = pd.concat([df_db, df_new], ignore_index=True)
-            
-            # 計算差額並顯示稽核資訊
-            diff = new_count - last_update_count
-            print(f"\n本次成功獲取資料: {new_count} 筆")
-            print(f"資料合併成功，目前總筆數: {len(df_final)} (與上筆資料差額: {diff})")
-            
         except Exception as e:
-            # 防覆蓋機制：讀取失敗直接中斷，絕對不覆蓋原檔案
-            print(f"讀取舊檔失敗 ({e})。為保護歷史資料，停止覆蓋並強制中斷程式。")
-            return
+            return {"status": "失敗", "error": f"本地資料庫讀取失敗: {str(e)}"}
     else:
-        print("找不到舊檔案，建立全新資料庫。")
         df_final = df_new
 
-    # 3. 排序 (以日期為主，代號為輔，確保時序正確)
     df_final = df_final.sort_values(by=['date','id'], ascending=[True, True])
 
-    # 4. 驗證與存檔
-    print('\n===================== [資料庫抽樣檢驗] =====================')
-    print("[2330 台積電] 最新動態:")
-    print(df_final[df_final['id'] == '2330'].tail(3).to_string(index=False))
-    print('\n[5347 世界先進] 最新動態:')
-    print(df_final[df_final['id'] == '5347'].tail(3).to_string(index=False))
-    print('===========================================================\n')
+    # 5. Save and Upload unconditionally
+    df_final.to_parquet(FILE_NAME, index=False, engine='pyarrow')
+    
+    from market_data.backup_database import backup_to_supabase
+    current_year = target_dt.year
+    df_year = df_final[df_final['date'].dt.year == current_year]
+    temp_file = config.MARKET_DATA_DIR / f"market_{current_year}.parquet"
+    df_year.to_parquet(temp_file, index=False, engine='pyarrow')
+    
+    success = backup_to_supabase('stock_data_backup', str(temp_file), f"market/market_{current_year}.parquet")
+    if os.path.exists(temp_file): os.remove(temp_file)
+        
+    action_msg = "已上傳覆寫至 Supabase 雲端" if success else "上傳 Supabase 失敗"
 
-    # 自動化模式判定：如果有指定 specific_date，為了方便批次處理，直接存檔不詢問
-    if specific_date:
-         df_final.to_parquet(FILE_NAME, index=False, engine='pyarrow')
-         print(f"{standard_date_str} 資料庫回補成功!")
-    else:
-        user_input = input('確認資料無誤？ [按 Y 存檔 / 其他鍵取消]: ')
-        if user_input.lower() == 'y':
-            df_final.to_parquet(FILE_NAME, index=False, engine='pyarrow')
-            print("資料庫更新成功!")
-        else:
-            print("資料未寫入，記憶體已清空。")
+    return {
+        "status": "成功",
+        "date": standard_date_str,
+        "rows": new_count,
+        "nans": nan_count,
+        "action": action_msg
+    }
 
 if __name__ == "__main__":
     def backfill(dates_to_fix):

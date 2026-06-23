@@ -1,0 +1,43 @@
+name: Daily Market Scraper
+
+on:
+  # 支援手動觸發 (讓您可以在 GitHub 網頁上直接按按鈕測試)
+  workflow_dispatch:
+  
+  # 排程觸發 (時間為 UTC，台灣時間 = UTC + 8)
+  # 以下設定為 UTC 07:30，也就是台灣時間的下午 15:30 (台股收盤後)
+  schedule:
+    - cron: '15 13 * * *'
+
+jobs:
+  scrape-and-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      # 不使用 pip install -e . 以避開 TA-Lib 的複雜 C++ 編譯問題，
+      # 只安裝爬蟲與上傳所需要的輕量套件
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests python-dotenv supabase pyarrow
+
+      - name: Run Daily Scraper
+        env:
+          # 告訴程式這是在 GitHub 執行，啟動正確的防呆下載邏輯
+          GITHUB_ACTIONS: "true"
+          
+          # 將 GitHub Secrets 注入環境變數
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DC_WEBHOOK_URL: ${{ secrets.DC_WEBHOOK_URL }}
+        run: |
+          python routine/webhook.py

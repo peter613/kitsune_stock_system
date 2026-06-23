@@ -43,40 +43,21 @@ def cloud_has_data(bucket_name: str) -> bool:
 
 
 def backup():
-    current_year = datetime.now().year
-    df = pd.read_parquet(f"{config.MARKET_DATA_DIR}/market.parquet")
-    df['year'] = df['date'].dt.year
-
-    initialized = cloud_has_data('stock_data_backup')
-    if initialized:
-        print("雲端已有資料，僅上傳當前年份")
-        years_to_upload = {current_year}
-    else:
-        print("雲端無資料，初始化上傳所有年份")
-        years_to_upload = set(df['year'].unique())
-
+    print("開始備份個人帳務與營收資料到雲端...")
     responses = []
-
-    for year, group in df.groupby('year'):
-        if year in years_to_upload:
-            temp_file = f"{config.MARKET_DATA_DIR}/market_{year}.parquet"
-            group.drop(columns=['year']).to_parquet(temp_file)
-            response = backup_to_supabase(
-                'stock_data_backup',
-                temp_file,
-                f"market/market_{year}.parquet"
-            )
-            responses.append(response)
-            os.remove(temp_file)
 
     for local, remote in [
         (f"{config.MARKET_DATA_DIR}/revenue.csv",                              "/revenue.csv"),
         (f"{config.STOCK_JOURNAL_DIR}/journal.csv",                            "/trading_record.csv"),
         (f"{config.FUND_STOCK_ADMINISTRATION_DIR}/transaction.csv",            "/transaction.csv"),
     ]:
-        responses.append(backup_to_supabase('stock_data_backup', local, remote))
+        if os.path.exists(local):
+            responses.append(backup_to_supabase('stock_data_backup', local, remote))
+        else:
+            print(f"找不到本地檔案: {local}")
 
-    print("\n所有資料上傳成功" if all(responses) else "\n部分資料上傳失敗")
+    if responses:
+        print("\n備份作業完畢" if all(responses) else "\n部分資料上傳失敗")
 
 
 if __name__ == '__main__':
