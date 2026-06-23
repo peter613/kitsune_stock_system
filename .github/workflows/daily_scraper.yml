@@ -7,7 +7,7 @@ on:
   # 排程觸發 (時間為 UTC，台灣時間 = UTC + 8)
   # 以下設定為 UTC 07:30，也就是台灣時間的下午 15:30 (台股收盤後)
   schedule:
-    - cron: '15 13 * * *'
+    - cron: '8 13 * * *'
 
 jobs:
   scrape-and-update:
