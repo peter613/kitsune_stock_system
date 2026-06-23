@@ -4,10 +4,9 @@ on:
   # 支援手動觸發 (讓您可以在 GitHub 網頁上直接按按鈕測試)
   workflow_dispatch:
   
-  # 排程觸發 (時間為 UTC，台灣時間 = UTC + 8)
-  # 以下設定為 UTC 07:30，也就是台灣時間的下午 15:30 (台股收盤後)
+  # 以下設定為 UTC 13:20，也就是台灣時間的晚上 21:20
   schedule:
-    - cron: '8 13 * * *'
+    - cron: '20 13 * * *'
 
 jobs:
   scrape-and-update:
@@ -40,4 +39,4 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DC_WEBHOOK_URL: ${{ secrets.DC_WEBHOOK_URL }}
         run: |
-          python routine/webhook.py
+          python github_action/main.py
