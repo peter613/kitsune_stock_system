@@ -307,7 +307,8 @@ def update_market_data(specific_date=None):
     # 5. Save and Upload unconditionally
     df_final.to_parquet(FILE_NAME, index=False, engine='pyarrow')
     
-    from market_data.backup_database import backup_to_supabase
+    # 因為 backup_db.py 已經被移動到根目錄，這裡的路徑需要修正
+    from backup_db import backup_to_supabase
     current_year = target_dt.year
     df_year = df_final[df_final['date'].dt.year == current_year]
     temp_file = config.MARKET_DATA_DIR / f"market_{current_year}.parquet"
