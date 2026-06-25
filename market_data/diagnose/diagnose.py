@@ -4,8 +4,8 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-# 將專案根目錄加入路徑
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 將專案根目錄加入 sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config
 
 # 驗收專用白名單 (老AI與優質上櫃股)
@@ -18,7 +18,7 @@ def diagnose():
     print("[系統通知] 資料庫診斷報告 (專屬驗收池模式)")
     
     end_date = pd.Timestamp(datetime.now().date())
-    start_date = end_date - pd.Timedelta(days=365)
+    start_date = pd.Timestamp('2021-01-01')
     
     print(f"診斷區間：{start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')}\n")
     
@@ -54,12 +54,62 @@ def diagnose():
                 top_nans_str = ", ".join([f"{idx} ({val}個)" for idx, val in nan_by_id.items()])
                 print(f"  前十大缺失值股票：{top_nans_str}")
         
-        # 連續性分析
-        print("- 連續性分析：")
+        # 全局日期連續性分析 (尋找大盤休市或缺漏)
+        print("- 全局日期連續性分析 (大盤交易日)：")
         all_dates = sorted(df_m['date'].unique())
         total_days = len(all_dates)
         print(f"  總交易日數：{total_days}")
         
+        weekdays = ['一', '二', '三', '四', '五', '六', '日']
+        
+        # 讀取官方休市名單 (與 diagnose.py 同一層目錄)
+        holidays_path = os.path.join(os.path.dirname(__file__), 'holidays.csv')
+        holiday_dates = set()
+        holiday_dict = {}
+        if os.path.exists(holidays_path):
+            df_h = pd.read_csv(holidays_path)
+            df_h['date'] = pd.to_datetime(df_h['date'])
+            holiday_dates = set(df_h['date'].dt.date)
+            # 建立對應字典 {date: '清明節'}
+            for _, row in df_h.iterrows():
+                holiday_dict[row['date'].date()] = row['name']
+        else:
+            print("  ⚠️ 尚未產生 holidays.csv，無法進行官方休市比對，將全部標示為異常。")
+        
+        abnormal_gaps = []
+        holiday_gaps_count = 0
+        
+        for i in range(len(all_dates) - 1):
+            d1, d2 = all_dates[i], all_dates[i+1]
+            b_dates = pd.bdate_range(d1, d2)
+            missing_dates = b_dates[1:-1]
+            missing_bdays = len(missing_dates)
+            
+            if missing_bdays > 0:
+                d1_str = f"{d1.strftime('%Y-%m-%d')}({weekdays[d1.weekday()]})"
+                d2_str = f"{d2.strftime('%Y-%m-%d')}({weekdays[d2.weekday()]})"
+                
+                # 檢查這批缺漏日期，是否全部都在休市名單內
+                all_holidays = all(d.date() in holiday_dates for d in missing_dates)
+                
+                if all_holidays:
+                    # 合法休市，不印出來增加雜訊，只紀錄數量
+                    holiday_gaps_count += 1
+                else:
+                    # 有任何一天不在名單內，就是爬蟲異常
+                    # 只列出「非休市」的異常日期
+                    real_missing = [d for d in missing_dates if d.date() not in holiday_dates]
+                    missing_str = ", ".join([f"{d.strftime('%Y-%m-%d')}({weekdays[d.weekday()]})" for d in real_missing])
+                    abnormal_gaps.append(f"{d1_str} ~ {d2_str}\n      -> [異常缺漏] 證交所有開市但未抓取: {missing_str}")
+                    
+        if abnormal_gaps:
+            print(f"  [警告] 發現大盤資料缺漏 (已過濾 {holiday_gaps_count} 個合法休市)：")
+            for gap in abnormal_gaps:
+                print(f"    -> {gap}")
+        else:
+            print(f"  [完美] 日期連續性：完美 (自動隱藏了 {holiday_gaps_count} 個合法休市斷層，無任何異常缺漏)")
+            
+        print("\n- 個股連續性分析：")
         # 計算每檔股票的預期天數 (從它的第一筆資料開始算到最後一天，防呆 IPO 新股)
         first_date_by_id = df_m.groupby('id')['date'].min()
         actual_count_by_id = df_m.groupby('id').size()

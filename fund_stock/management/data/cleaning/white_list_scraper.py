@@ -5,7 +5,7 @@ import time
 import pandas as pd
 import config
 
-def crawler(url):
+def scraper(url):
     data_list = []
     options = Options()
     options.add_argument('--headless')
@@ -53,7 +53,7 @@ if __name__ == "__main__":
         for code in range(24, 32):
             url = f'https://isin.twse.com.tw/isin/class_main.jsp?owncode=&stockname=&isincode=&market={market}&issuetype=&industry_code={code}&Page=1&chklike=Y'
             print(f"爬取中: market={market}, code={code}")  # 方便追蹤進度
-            data = crawler(url)
+            data = scraper(url)
             if data:
                 final_data_list.extend(data)  # extend 而非 append
 

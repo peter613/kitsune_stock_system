@@ -352,6 +352,5 @@ if __name__ == "__main__":
     #         '20260304', '20260305', 
     #         '20260306', '20260309',
     #     ]
-    #     backfill(dates_to_fix)
     # backfill(dates_to_fix)
         

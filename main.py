@@ -23,7 +23,7 @@ cash (id = cash, label = 隨意(wage/capital))
 from backup_db import backup
 from market_data.updater.etf import update_etf
 from market_data.updater.revenue import update_revenue
-from market_data.diagnose_db import diagnose
+from market_data.diagnose.diagnose import diagnose
 from market_data.sync_data import sync
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
