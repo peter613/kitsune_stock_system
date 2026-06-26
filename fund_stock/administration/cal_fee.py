@@ -23,6 +23,7 @@ from datetime import datetime
 '''
 
 PERFORMANCE_FEE_RATE = 0.05  # 績效費率 5%
+PERFORMANCE_BOUND = 0.05
 MANAGER = 'PETER'            # 基金經理人（績效費收取方）
 
 def run_fee_settlement(target_month):
@@ -88,8 +89,8 @@ def run_fee_settlement(target_month):
         nav_start = first_entry['nav_per_unit']
         monthly_return = (nav_end / nav_start) - 1.0
 
-        if monthly_return <= 0:
-            print(f"\n[{investor}] {target_month} 無獲利（月報酬率 {monthly_return*100:.2f}%），免收績效費。")
+        if monthly_return <= PERFORMANCE_BOUND:
+            print(f"\n[{investor}] {target_month} 月報酬率 {monthly_return*100:.2f}% < {PERFORMANCE_BOUND} ，免收績效費。")
             continue
 
         # 計算績效費單位數

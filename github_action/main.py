@@ -85,14 +85,14 @@ def run_daily_job():
         # 3. 根據回傳的結果，組裝低熵、無雜訊的報告
         if result.get("status") in ["略過", "失敗", "取消"]:
             report = (
-                "每日股市資料更新報告\n"
+                "股市爬蟲日報\n"
                 f"日期：{date_str}\n"
                 f"狀態：異常\n\n"
                 f"‧ ERROR：{result.get('error')}"
             )
         else:
             report = (
-                "每日股市資料更新報告\n"
+                "股市爬蟲日報\n"
                 f"日期：{result.get('date')}\n"
                 f"狀態：{result.get('status')}\n\n"
                 f"‧ 獲取筆數：{result.get('rows')} 筆\n"
@@ -103,7 +103,7 @@ def run_daily_job():
     except Exception as e:
         # 防呆機制：捕捉未預期的爬蟲崩潰 (Crash)
         report = (
-            "每日股市資料更新報告\n"
+            "股市爬蟲日報\n"
             f"日期：{date_str}\n"
             f"狀態：異常\n\n"
             f"‧ ERROR：{str(e)}"
