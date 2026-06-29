@@ -1,12 +1,8 @@
 name: Daily Market Scraper
 
 on:
-  # 支援手動觸發 (讓您可以在 GitHub 網頁上直接按按鈕測試)
+  # 支援外部定時觸發 (由 cron-job.org 等外部服務觸發)
   workflow_dispatch:
-  
-  # 以下設定為 UTC(+8hr台灣時間)
-  schedule:
-    - cron: '11 10 * * 1-5'
 
 jobs:
   scrape-and-update:

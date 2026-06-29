@@ -83,7 +83,11 @@ def run_daily_job():
         result = update_market_data()
         
         # 3. 根據回傳的結果，組裝低熵、無雜訊的報告
-        if result.get("status") in ["略過", "失敗", "取消"]:
+        if result.get("status") == "略過":
+            print(f"[INFO] 收到略過訊號 (原因: {result.get('error')})，不發送 Discord 通知。")
+            return
+            
+        elif result.get("status") in ["失敗", "取消"]:
             report = (
                 "台股數據更新\n"
                 f"日期：{date_str}\n"
