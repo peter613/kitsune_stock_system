@@ -1,7 +1,7 @@
 name: Daily Market Scraper
 
 on:
-  # 支援外部定時觸發 (由 cron-job.org 等外部服務觸發)
+  # 支援外部定時觸發 (由 cron-job.org 觸發)
   workflow_dispatch:
 
 jobs:
