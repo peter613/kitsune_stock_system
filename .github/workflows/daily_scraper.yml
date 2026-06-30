@@ -4,7 +4,7 @@ on:
   # 支援外部定時觸發 (由 cron-job.org 觸發)
   workflow_dispatch:
   repository_dispatch:
-    types: [cron_trigger]
+    types: [Daily_Market_Scraper]
 
 jobs:
   scrape-and-update:
