@@ -87,7 +87,11 @@ def sync():
     # local_revenue = f"{config.MARKET_DATA_DIR}/revenue.csv"
     # download_from_supabase('stock_data_backup', remote_revenue, local_revenue)
     
-    print("\n同步作業結束！")
+    print("\n同步作業結束！開始執行資料診斷...")
+    from market_data.diagnose.diagnose import diagnose_all
+    is_perfect = diagnose_all()
+    if is_perfect:
+        print("\n完美！資料庫更新成功且毫無缺漏！")
 
 if __name__ == '__main__':
     sync()
