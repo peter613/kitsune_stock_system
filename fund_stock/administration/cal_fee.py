@@ -23,7 +23,7 @@ from datetime import datetime
 '''
 
 PERFORMANCE_FEE_RATE = 0.05  # 績效費率 5%
-PERFORMANCE_BOUND = 0.05
+PERFORMANCE_BOUND = 0.03
 MANAGER = 'PETER'            # 基金經理人（績效費收取方）
 
 def run_fee_settlement(target_month):
