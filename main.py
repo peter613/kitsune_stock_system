@@ -23,7 +23,7 @@ cash (id = cash, label = 隨意(wage/capital))
 from backup_db import backup
 from market_data.updater.etf import update_etf
 from market_data.updater.revenue import update_revenue
-from market_data.diagnose.diagnose import diagnose
+from market_data.diagnose.diagnose import diagnose_all, diagnose_market
 from market_data.sync_data import sync
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
@@ -175,14 +175,21 @@ def main():
                 print("\n[處理中...]")
                 res = sync_database()
                 print(f"{res}")
-                    
+
+                print("\n同步作業結束！開始執行資料診斷...")
+                market_ok = diagnose_market()
+                if market_ok:
+                    print("市場資料 (market.parquet): 完美無缺漏！")
+                else:
+                    print("[異常] 請進行資料診斷")
+
             elif action_database == "更新營收資料庫":
                 print("\n[更新中...]")
                 update_revenue()
 
             elif action_database == "診斷資料庫":
                 print("\n[診斷中...]")
-                diagnose()
+                diagnose_all()
 
         elif action_home == "量化模組":
             action_quant = questionary.select(
