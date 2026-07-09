@@ -127,8 +127,8 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
     SINGLE_TRADE_CAP = 0.80    # 單筆最高獲利封頂 (80%)
-    AMOUNT_ON         = True    
-    AMOUNT_THRESHOLD  = 100000 #1.0億
+    AMOUNT_THRESHOLD  = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
+    REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
 
     rank_str = ','.join(map(str, select_rank))
     print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
@@ -141,8 +141,10 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     test_df = df[df['date'] >= cutoff_date].copy()
     test_df = test_df.sort_values(['date', 'id']).reset_index(drop=True)
 
-    if AMOUNT_ON:
-        test_df = test_df[test_df['amount'] > AMOUNT_THRESHOLD].reset_index(drop=True)
+    if AMOUNT_THRESHOLD > 0:
+        test_df = test_df[test_df['amount'] >= AMOUNT_THRESHOLD].reset_index(drop=True)
+    if REVENUE_THRESHOLD > 0:
+        test_df = test_df[test_df['month_revenue'] >= REVENUE_THRESHOLD].reset_index(drop=True)
 
     # ── 2. 模型評分 ──────────────────────────────────
     model = CatBoostRanker()

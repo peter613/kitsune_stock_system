@@ -478,7 +478,7 @@ def page_history(df_record, df_price, df_history):
         total_re_pnl = df_re["已實現損益"].sum()
         total_re_cost = df_re["總成本"].sum()
         total_re_roi = (total_re_pnl / total_re_cost * 100) if total_re_cost > 0 else 0
-        st.subheader(f"已實現損益 │ {total_re_roi:.2f}%")
+        st.subheader(f"已實現損益 │ {total_re_roi:.2f}% (平均單筆)")
         
         # 建立週期報酬柱狀圖
         if "進場週期" in df_re.columns:

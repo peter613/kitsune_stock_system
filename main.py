@@ -37,16 +37,25 @@ from fund_stock.administration.update_navpu import update_quant
 # 系統工具定義(指令)
 # =================
 def sync_database():
+    market_ok = diagnose_market()
+
     print('\n\n[1.] 下載 ETF')
     update_etf()
     
     print('\n\n[2.] 同步 股市')
     sync()
+    
+    print('\n\n[3.] 資料庫診斷')
+    if market_ok:
+        print("market.parquet 完美無缺漏！")
+    else:
+        print("[異常] 請進行資料診斷")
+        return f"\n\n資料庫問題，中斷程序。"
 
-    print('\n\n[3.] 更新基金帳務')
+    print('\n\n[4.] 更新基金帳務')
     update_quant()
 
-    print('\n\n[4.] 備份資料庫')
+    print('\n\n[5.] 備份資料庫')
     backup()
 
     return f"\n\n資料庫已全面更新完畢。"
@@ -174,13 +183,6 @@ def main():
             if action_database == "同步與備份資料庫":
                 print("\n[處理中...]")
                 res = sync_database()
-
-                print("\n同步作業結束！開始執行資料診斷...")
-                market_ok = diagnose_market()
-                if market_ok:
-                    print("市場資料 (market.parquet): 完美無缺漏！")
-                else:
-                    print("[異常] 請進行資料診斷")
 
                 print(f"{res}")
 

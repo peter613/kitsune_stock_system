@@ -7,7 +7,7 @@ import config
 from scipy.stats import entropy
 
 # --- 設定區 ---
-def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
+def create_prediction(stock_filter=True, specified_date=None):
     # 1. 檔案路徑更新
     file_name = config.MARKET_DATA_DIR / 'market.parquet'
     file_name_revenue = config.MARKET_DATA_DIR / 'revenue.csv'
@@ -244,10 +244,16 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     final_predict_df["liq_rank"] = final_predict_df["amount_ema_20"].rank(ascending=False, method='min')
     final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)]
 
-    if amount_on:
-        AMOUNT_THRESHOLD = 100000 #當天成交1億
-        final_predict_df = final_predict_df[final_predict_df['amount'] > AMOUNT_THRESHOLD].reset_index(drop=True)
+    AMOUNT_THRESHOLD = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
+    REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
+    
+    if AMOUNT_THRESHOLD > 0:
+        final_predict_df = final_predict_df[final_predict_df['amount'] >= AMOUNT_THRESHOLD].reset_index(drop=True)
         print(f'執行成交值流動性過濾> {AMOUNT_THRESHOLD}(千)...')
+
+    if REVENUE_THRESHOLD > 0 and 'month_revenue' in final_predict_df.columns:
+        final_predict_df = final_predict_df[final_predict_df['month_revenue'] >= REVENUE_THRESHOLD].reset_index(drop=True)
+        print(f'執行營收過濾> {REVENUE_THRESHOLD}(千)...')
 
     features = [
         # 趨勢強度
@@ -277,4 +283,4 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260511')
+    create_prediction(specified_date='20260610')

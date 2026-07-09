@@ -5,7 +5,6 @@ import matplotlib.font_manager as fm
 import pandas as pd
 import numpy as np
 from catboost import CatBoostRanker
-import os
 import yfinance as yf
 import config
 
@@ -175,8 +174,8 @@ def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005
     FIXED_STOP_LOSS  = 0.20
-    AMOUNT_ON         = True
-    AMOUNT_THRESHOLD  = 50000
+    AMOUNT_THRESHOLD  = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
+    REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
 
     rank_str = ','.join(map(str, select_rank))
 
@@ -188,8 +187,10 @@ def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0
     test_df = df[df['date'] >= cutoff_date].copy()
     test_df = test_df.sort_values(['date', 'id']).reset_index(drop=True)
 
-    if AMOUNT_ON:
-        test_df = test_df[test_df['amount'] > AMOUNT_THRESHOLD].reset_index(drop=True)
+    if AMOUNT_THRESHOLD > 0:
+        test_df = test_df[test_df['amount'] >= AMOUNT_THRESHOLD].reset_index(drop=True)
+    if REVENUE_THRESHOLD > 0 and 'month_revenue' in test_df.columns:
+        test_df = test_df[test_df['month_revenue'] >= REVENUE_THRESHOLD].reset_index(drop=True)
 
     # ── 2. 模型評分 ──────────────────────────────────
     model = CatBoostRanker()
