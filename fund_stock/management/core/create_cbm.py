@@ -58,13 +58,13 @@ def create_cbm(version=None):
 
         # 流動性與動能排名 
         "amount_rank",
-        'rs_rank_20', 'rs_rank_60',
+        'rs_rank_20','rs_rank_60',
         
         # 籌碼與法人動能
         "trust_in",
 
         # 基本面
-        "yoy", 'rev_breakout_12', "rev_bias_3", 
+        "yoy", "rev_bias_3",'rev_breakout_12',
 
         # 位階
         "breakout_200",
@@ -130,4 +130,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v37')
+    create_cbm(version='v38')

@@ -192,6 +192,6 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
 if __name__ == "__main__":
     #print(search_stock('台光電', version='v33'))
-    result = prediction(version='v37', select_ranks=[c for c in range(1,6)])
+    result = prediction(version='v38', select_ranks=[c for c in range(1,6)])
     if isinstance(result, str):
         print(result)

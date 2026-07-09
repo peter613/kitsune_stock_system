@@ -58,7 +58,7 @@ def backup():
             print(f"找不到本地檔案: {local}")
 
     if responses:
-        print("\n備份作業完畢" if all(responses) else "\n部分資料上傳失敗")
+        print("備份作業完畢" if all(responses) else "部分資料上傳失敗")
 
 
 if __name__ == '__main__':

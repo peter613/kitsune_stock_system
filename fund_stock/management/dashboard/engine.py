@@ -139,6 +139,7 @@ def calculate_settlement_data(df_record, df_price):
         total_revenue   = 0.0
         total_sell_cost = 0.0
         last_sell_date  = None
+        last_buy_date   = None
 
         for _, row in sub.iterrows():
             trade_val = row['price'] * row['share']
@@ -146,6 +147,7 @@ def calculate_settlement_data(df_record, df_price):
                 fee         = int(trade_val * 0.001425)
                 cum_shares += row['share']
                 total_cost += trade_val + fee
+                last_buy_date = row['date']
 
             elif row['action'] == 'sell':
                 fee         = int(trade_val * 0.001425) + int(trade_val * tax_rate)
@@ -161,17 +163,40 @@ def calculate_settlement_data(df_record, df_price):
                 cum_shares    -= row['share']
                 total_cost    -= sell_cost
                 last_sell_date = row['date']
+                
+                # 當部位清空時，結算這一輪的交易
+                if cum_shares <= 0.0001:
+                    cycle_str = f"{last_buy_date.strftime('%Y/%m')}" if pd.notnull(last_buy_date) else "未知"
+                    realized_data.append({
+                        "日期":       last_sell_date.strftime("%Y-%m-%d"),
+                        "進場週期":   cycle_str,
+                        "代號":       aid,
+                        "名稱":       stock_name,
+                        "累積報酬率": f"{(total_r_pnl / total_sell_cost) * 100:.1f}%" if total_sell_cost > 0 else "0%",
+                        "已實現損益": round(total_r_pnl, 0),
+                        "總成本":     round(total_sell_cost, 0),
+                        "回收現金":   round(total_revenue, 0),
+                    })
+                    # 重置變數以迎接下一次買進
+                    total_r_pnl     = 0.0
+                    total_revenue   = 0.0
+                    total_sell_cost = 0.0
+                    last_sell_date  = None
 
-        shares_sold = sub[sub['action'] == 'sell']['share'].sum()
-        if shares_sold > 0 and last_sell_date is not None:
+        # 迴圈結束後，如果還有未清空的已賣出紀錄 (異常防呆)
+        if total_sell_cost > 0 and last_sell_date is not None and cum_shares > 0.0001:
+            cycle_str = f"{last_buy_date.strftime('%Y/%m')}" if pd.notnull(last_buy_date) else "未知"
             realized_data.append({
                 "日期":       last_sell_date.strftime("%Y-%m-%d"),
-                "代號":       aid,#若未來要超連結改成:yahoo_url,
+                "進場週期":   cycle_str,
+                "代號":       aid,
                 "名稱":       stock_name,
                 "累積報酬率": f"{(total_r_pnl / total_sell_cost) * 100:.1f}%" if total_sell_cost > 0 else "0%",
                 "已實現損益": round(total_r_pnl, 0),
+                "總成本":     round(total_sell_cost, 0),
                 "回收現金":   round(total_revenue, 0),
             })
+            
         realized_data = sorted(realized_data, key=lambda x: x["日期"], reverse=True)
         
         if cum_shares > 0:
@@ -182,6 +207,7 @@ def calculate_settlement_data(df_record, df_price):
             unrealized_data.append({
                 "代號":       aid,#若未來要超連結改成:yahoo_url,
                 "名稱":       stock_name,
+                "股數":       int(cum_shares),
                 "累積報酬率": f"{(u_pnl / total_cost) * 100:.1f}%" if total_cost > 0 else "0%",
                 "未實現損益": round(u_pnl, 0),
                 "當前市值":   round(mv, 0),

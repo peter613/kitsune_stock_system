@@ -453,18 +453,96 @@ def page_history(df_record, df_price, df_history):
     }
 
     # ── 未實現 ──
-    st.subheader(f"未實現損益 │ ${total_unrealized:,.0f}")
     if unrealized_data:
-        df_un = pd.DataFrame(unrealized_data).sort_values("當前市值", ascending=False)
-        st.dataframe(df_un, width='stretch', hide_index=True)#若需要超連結可省略註解,column_config=column_config_setting)
+        df_un = pd.DataFrame(unrealized_data)
+        total_un_pnl = df_un["未實現損益"].sum()
+        total_un_mv = df_un["當前市值"].sum()
+        total_un_cost = total_un_mv - total_un_pnl
+        total_un_roi = (total_un_pnl / total_un_cost * 100) if total_un_cost > 0 else 0
+        st.subheader(f"未實現損益 │ {total_un_roi:.2f}%")
+        # 將字串轉為浮點數進行排序
+        df_un["sort_roi"] = df_un["累積報酬率"].str.replace("%", "").astype(float)
+        df_un = df_un.sort_values("sort_roi", ascending=False)
+        # 基金經理人不看絕對金額，只保留報酬率
+        df_un["標的"] = df_un["代號"].astype(str) + " " + df_un["名稱"]
+        df_un_display = df_un[["標的", "股數", "累積報酬率"]]
+        st.dataframe(df_un_display, width='stretch', hide_index=True)
+    else:
+        st.subheader("未實現損益 │ 0.00%")
 
     st.markdown("---")
 
     # ── 已實現 ──
-    st.subheader(f"已實現損益 │ ${total_realized:,.0f}")
     if realized_data:
         df_re = pd.DataFrame(realized_data)
-        st.dataframe(df_re, width='stretch', hide_index=True)#若需要超連結可省略註解,column_config=column_config_setting)
+        total_re_pnl = df_re["已實現損益"].sum()
+        total_re_cost = df_re["總成本"].sum()
+        total_re_roi = (total_re_pnl / total_re_cost * 100) if total_re_cost > 0 else 0
+        st.subheader(f"已實現損益 │ {total_re_roi:.2f}%")
+        
+        # 建立週期報酬柱狀圖
+        if "進場週期" in df_re.columns:
+            cycle_stats = df_re.groupby("進場週期").agg(
+                總已實現損益=("已實現損益", "sum"),
+                總成本=("總成本", "sum")
+            ).reset_index()
+            
+            # 排序週期 (確保時間軸順序)
+            cycle_stats = cycle_stats.sort_values("進場週期")
+            
+            # 計算週期總報酬率
+            cycle_stats["週期報酬率"] = (cycle_stats["總已實現損益"] / cycle_stats["總成本"]) * 100
+            
+            # 建立 hovertext
+            hover_texts = []
+            for cycle in cycle_stats["進場週期"]:
+                sub_df = df_re[df_re["進場週期"] == cycle]
+                cycle_ret = cycle_stats.loc[cycle_stats["進場週期"]==cycle, "週期報酬率"].values[0]
+                hover_str = f"<b>總報酬: {cycle_ret:.2f}%</b><br><br>"
+                for _, row in sub_df.iterrows():
+                    hover_str += f"{row['名稱']} ({row['代號']}): {row['累積報酬率']}<br>"
+                hover_texts.append(hover_str)
+                
+            fig_bar = go.Figure(data=[
+                go.Bar(
+                    x=cycle_stats["進場週期"],
+                    y=cycle_stats["週期報酬率"],
+                    marker_color="#4F247E",
+                    hovertext=hover_texts,
+                    hoverinfo="text"
+                )
+            ])
+            fig_bar.update_layout(
+                template="plotly_dark",
+                yaxis_title="總報酬率 (%)",
+                xaxis_title="進場週期",
+                margin=dict(t=40, l=10, r=10, b=10),
+                hoverlabel=dict(
+                    bgcolor="white",
+                    font_size=15,
+                    font_family="Arial",
+                    font_color="black"
+                )
+            )
+            st.plotly_chart(fig_bar, width='stretch')
+            
+            # 準備 Top 10 排行榜
+            df_re["sort_roi"] = df_re["累積報酬率"].str.replace("%", "").astype(float)
+            df_re_top10 = df_re.sort_values("sort_roi", ascending=False).head(10)
+            
+            # 建立標的名稱
+            df_re_top10["標的"] = df_re_top10["代號"].astype(str) + " " + df_re_top10["名稱"]
+            # 只顯示關鍵欄位
+            df_re_display = df_re_top10[["進場週期", "標的", "累積報酬率"]]
+        else:
+            df_re["標的"] = df_re["代號"].astype(str) + " " + df_re["名稱"]
+            df_re_display = df_re[["日期", "標的", "累積報酬率"]]
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("最佳個股報酬 (Top 10)")
+        st.dataframe(df_re_display, width='stretch', hide_index=True)
+    else:
+        st.subheader("已實現損益 │ 0.00%")
 
     st.markdown("---")
 

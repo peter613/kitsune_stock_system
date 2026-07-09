@@ -377,7 +377,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     print(f"日勝率:       {daily_winrate:>10.2f}%")
     print("-" * 80)
     print(f"月數:              {total_months}")
-    print(f"20%停損次數:       {stop_loss_count} 次")
+    print(f"{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
     print("=" * 80)
 
     # ──────────────────────────────────────────────
@@ -516,4 +516,4 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
 
 if __name__ == "__main__":
     # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v37', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)
+    backtester(version='v38', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)

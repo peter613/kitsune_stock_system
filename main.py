@@ -174,7 +174,6 @@ def main():
             if action_database == "同步與備份資料庫":
                 print("\n[處理中...]")
                 res = sync_database()
-                print(f"{res}")
 
                 print("\n同步作業結束！開始執行資料診斷...")
                 market_ok = diagnose_market()
@@ -182,6 +181,8 @@ def main():
                     print("市場資料 (market.parquet): 完美無缺漏！")
                 else:
                     print("[異常] 請進行資料診斷")
+
+                print(f"{res}")
 
             elif action_database == "更新營收資料庫":
                 print("\n[更新中...]")

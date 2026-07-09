@@ -94,7 +94,7 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         for col in feature_cols:
             if col in df.columns:
                 if col in ['mom', 'yoy', 'yoy_ma5', 'yoy_ma5_bias']:
-                    df[col] = df[col].clip(-50, 50)
+                    df[col] = df[col].clip(-100.0, 100.0)
                 # else:
                 #     lower = df[col].quantile(0.01)
                 #     upper = df[col].quantile(0.99)
@@ -122,12 +122,17 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
         amount_20 = SMA(amount_ln, timeperiod=20)
         amount_ema_20 = EMA(amount_ln, timeperiod=20)
 
+        # ── 突破 / 支撐 / 區間箱型 (Box) ──────────────────
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
         
-        box_res_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.85).values
-        box_sup_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.15).values
+        # 近期天花板 (20日最高收盤價)
+        box_res_20 = MAX(close, timeperiod=20)
+        # 近期地板 (20日最低收盤價)
+        box_sup_20 = MIN(close, timeperiod=20)
         
+        # 距離近期天花板多遠？ (>1 代表真突破)
         resistance_20 = close / (box_res_20 + 1e-9)
+        # 距離近期地板多遠？ (接近1 代表回踩支撐)
         support_20 = close / (box_sup_20 + 1e-9)
 
         trust_period = 10
@@ -236,7 +241,7 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
 
     print("執行EMA成交值流動性過濾 (保留Top 1/3)...")
     final_predict_df["day_count"] = len(final_predict_df)
-    final_predict_df["liq_rank"] = final_predict_df["amount_ema_20"].rank(ascending=False)
+    final_predict_df["liq_rank"] = final_predict_df["amount_ema_20"].rank(ascending=False, method='min')
     final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)]
 
     if amount_on:
@@ -272,4 +277,4 @@ def create_prediction(stock_filter=True, amount_on=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260610')
+    create_prediction(specified_date='20260511')

@@ -7,7 +7,7 @@ from datetime import datetime
 import gc
 import config
 
-def create_training(version='v14', years_10=True, stock_filter=True):
+def create_training(version='v37', years_10=True, stock_filter=True):
     file_save_name = config.STOCK_FEATURES_DIR / f'train_{version}.csv'
 
     # ---------------------------------------------------------
@@ -20,7 +20,6 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     
     # Revenue 與 Capital (CSV 格式，讀取時即指定型態防錯)
     df_revenue = pd.read_csv(config.MARKET_DATA_DIR / 'revenue.csv', encoding='utf-8', dtype={'id': str})
-
 
     # 強制執行時間格式化 (解決 .dt 報錯)
     df['date'] = pd.to_datetime(df['date'])
@@ -120,12 +119,13 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         amount_20 = SMA(amount_ln, timeperiod=20)
         amount_ema_20 = EMA(amount_ln, timeperiod=20)
 
-        # ── 突破 / 支撐 / 區間箱型 (Robust Box) ──────────────────
+        # ── 突破 / 支撐 / 區間箱型 (Box) ──────────────────
         breakout_200 = close / (MAX(close, timeperiod=200) + 1e-9)
         
-        # 透過 85% 與 15% 分位數，完美過濾避雷針與下影線假突破，找出真實的支撐壓力線
-        box_res_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.85).values
-        box_sup_20 = pd.Series(close).rolling(20, min_periods=1).quantile(0.15).values
+        # 近期天花板 (20日最高收盤價)
+        box_res_20 = MAX(close, timeperiod=20)
+        # 近期地板 (20日最低收盤價)
+        box_sup_20 = MIN(close, timeperiod=20)
         
         # 距離近期天花板多遠？ (>1 代表真突破)
         resistance_20 = close / (box_res_20 + 1e-9)
@@ -217,7 +217,6 @@ def create_training(version='v14', years_10=True, stock_filter=True):
         how="left",
     )
 
-
     # 數值填補與市值對數化
     for col in ["yoy", "mom", "month_revenue", 'rev_breakout_12', 'rev_bias_3']:
         df[col] = df.groupby("id")[col].ffill()
@@ -273,4 +272,4 @@ def create_training(version='v14', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v37', years_10=True, stock_filter=True)
+    create_training(version='v38', years_10=True, stock_filter=True)
