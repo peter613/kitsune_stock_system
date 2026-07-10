@@ -1,5 +1,9 @@
 import os
 import sys
+
+# 把專案根目錄加入 sys.path，確保可以正確 import config
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import requests
 import config
 from dotenv import load_dotenv
@@ -36,7 +40,6 @@ def run_daily_job():
     print("[INFO] Starting Daily Automated Scraper...")
     
     # 這裡引入您寫的爬蟲模組
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from market_data.updater.market import update_market_data
     from market_data.sync_data import download_from_supabase
     from datetime import datetime
