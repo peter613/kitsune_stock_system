@@ -1,24 +1,19 @@
-import os
-import sys
 import time
 import random
 import requests
 import pandas as pd
 from datetime import datetime
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config
 
 def fetch_holidays():
     print("[INFO] 開始抓取 TWSE 官方休市名單 (2021 至今)...")
     
     # 1. 讀取現有的休市名單
-    save_dir = os.path.dirname(os.path.abspath(__file__))
-    save_path = os.path.join(save_dir, 'holidays.csv')
+    save_path = config.MARKET_DIAGNOSE_DIR / 'holidays.csv'
     
     existing_years = set()
     existing_df = None
-    if os.path.exists(save_path):
+    if save_path.exists():
         existing_df = pd.read_csv(save_path)
         existing_df['date'] = pd.to_datetime(existing_df['date'])
         existing_years = set(existing_df['date'].dt.year)

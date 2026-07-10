@@ -1,11 +1,6 @@
 import pandas as pd
 import numpy as np
-import os
-import sys
 from datetime import datetime
-
-# 將專案根目錄加入 sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config
 
 # 驗收專用白名單 (老AI與優質上櫃股)
@@ -35,9 +30,9 @@ def diagnose_market():
     all_dates = sorted(df_m['date'].unique())
     weekdays = ['一', '二', '三', '四', '五', '六', '日']
     
-    holidays_path = os.path.join(os.path.dirname(__file__), 'holidays.csv')
+    holidays_path = config.MARKET_DIAGNOSE_DIR / 'holidays.csv'
     holiday_dates = set()
-    if os.path.exists(holidays_path):
+    if holidays_path.exists():
         df_h = pd.read_csv(holidays_path)
         df_h['date'] = pd.to_datetime(df_h['date'])
         holiday_dates = set(df_h['date'].dt.date)

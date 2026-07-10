@@ -7,6 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent
 #=============================
 MARKET_DATA_DIR = BASE_DIR / "market_data" / "data"
 MARKET_UPDATER_DIR = BASE_DIR / "market_data" / "updater"
+MARKET_DIAGNOSE_DIR = BASE_DIR / "market_data" / "diagnose"
 
 #=============================
 # fund_stock_management

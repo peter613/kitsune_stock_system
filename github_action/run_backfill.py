@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+from datetime import datetime
 
 # 將專案根目錄加入路徑
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,6 +12,10 @@ from dotenv import load_dotenv
 # 確保載入 .env
 env_path = config.BASE_DIR / '.env'
 load_dotenv(dotenv_path=env_path)
+
+# 本地模組載入 (確保在環境變數與 sys.path 設定完成後引入)
+from market_data.updater.market import update_market_data
+from market_data.sync_data import download_from_supabase
 
 def run_backfill_job():
     print("===============================================")
@@ -32,12 +38,6 @@ def run_backfill_job():
 
     print(f"[INFO] 收到待回補的日期共 {len(dates_to_fix)} 天: {dates_to_fix}\n")
 
-    # 引入爬蟲與資料同步模組
-    from market_data.updater.market import update_market_data
-    from market_data.sync_data import download_from_supabase
-    from datetime import datetime
-    import time
-    
     current_year = datetime.now().year
     
     # 1. 根據執行環境下載現有的資料庫到本地環境
