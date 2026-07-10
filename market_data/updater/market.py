@@ -8,6 +8,7 @@ import os
 import time
 import config
 import random
+from backup_db import backup_to_supabase
 session = requests.Session()
 # 設定檔案路徑
 FILE_NAME = config.MARKET_DATA_DIR/'market.parquet'
@@ -256,14 +257,14 @@ def get_tpex_data(date_str):
 def get_data(date_str):
     twse_df = get_twse_data(date_str)
     tpex_df = get_tpex_data(date_str)
-    
+
     valid_dfs = [df for df in [twse_df, tpex_df] if df is not None and not df.empty]
     
     if not valid_dfs:
-        return None
+        return None,  twse_df, tpex_df
         
     final_df = pd.concat(valid_dfs, ignore_index=True)
-    return final_df
+    return final_df, twse_df, tpex_df
 
 def update_market_data(specific_date=None):
     # 1. Date setup
@@ -279,10 +280,16 @@ def update_market_data(specific_date=None):
     today_str = target_dt.strftime('%Y%m%d') 
     standard_date_str = target_dt.strftime('%Y-%m-%d') 
 
-    # 2. Fetch Data
-    df_new = get_data(today_str)
+    # 2. get Data
+    df_new, twse_df, tpex_df = get_data(today_str)
+    
     if df_new is None or df_new.empty:
-        return {"status": "失敗", "error": "無資料 (市場休市或爬蟲異常)。"}
+        return {"status": "失敗", "error": "上市與上櫃皆無資料 (休市或爬蟲異常)。"}
+
+    if twse_df is None or twse_df.empty:
+        return {"status": "失敗", "error": "上市無資料 (爬蟲異常)。"}
+    elif tpex_df is None or tpex_df.empty:
+        return {"status": "失敗", "error": "上櫃無資料 (爬蟲異常)。"}
 
     df_new['date'] = pd.to_datetime(standard_date_str)
     
@@ -307,8 +314,6 @@ def update_market_data(specific_date=None):
     # 5. Save and Upload unconditionally
     df_final.to_parquet(FILE_NAME, index=False, engine='pyarrow')
     
-    # 因為 backup_db.py 已經被移動到根目錄，這裡的路徑需要修正
-    from backup_db import backup_to_supabase
     current_year = target_dt.year
     df_year = df_final[df_final['date'].dt.year == current_year]
     temp_file = config.MARKET_DATA_DIR / f"market_{current_year}.parquet"
@@ -328,29 +333,6 @@ def update_market_data(specific_date=None):
     }
 
 if __name__ == "__main__":
-    def backfill(dates_to_fix):
-        for d_str in dates_to_fix:
-            # 直接把 'YYYY-MM-DD' 傳給主程式
-            print(f"\n準備回補: {d_str}")
-            update_market_data(specific_date=d_str)
-            
-            # 延遲避免被證交所 Ban IP
-            print("等待 5 秒後進行下一個日期的回補...\n")
-            time.sleep(5)
-        print("指定日期之歷史資料修補全數完成！")
-
-    #===========
-    #每日更新程式
-    #===========
-    update_market_data()
-
-    #===========
-    #回補資料
-    #===========
-    # dates_to_fix = [
-    #         '20260302', '20260303',
-    #         '20260304', '20260305', 
-    #         '20260306', '20260309',
-    #     ]
-    # backfill(dates_to_fix)
+    # 本地直接執行測試 (僅跑當日)
+    print(update_market_data())
         

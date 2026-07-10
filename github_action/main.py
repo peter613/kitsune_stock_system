@@ -1,9 +1,5 @@
 import os
 import sys
-
-# 將專案根目錄加入路徑，解決找不到 config 模組的問題
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import requests
 import config
 from dotenv import load_dotenv
@@ -40,7 +36,6 @@ def run_daily_job():
     print("[INFO] Starting Daily Automated Scraper...")
     
     # 這裡引入您寫的爬蟲模組
-    import sys
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from market_data.updater.market import update_market_data
     from market_data.sync_data import download_from_supabase
@@ -52,7 +47,9 @@ def run_daily_job():
     is_github_action = os.environ.get("GITHUB_ACTIONS") == "true"
     
     if is_github_action:
+        print("============================================================================")
         print(f"[INFO] GitHub Actions 環境：正在從 Supabase 下載 {current_year} 年歷史資料...")
+        print("============================================================================")
         remote_market = f"market/market_{current_year}.parquet"
         fake_local_db = str(config.MARKET_DATA_DIR / "market.parquet") 
         dl_success = download_from_supabase('stock_data_backup', remote_market, fake_local_db)
@@ -87,7 +84,7 @@ def run_daily_job():
             print(f"[INFO] 收到略過訊號 (原因: {result.get('error')})，不發送 Discord 通知。")
             return
             
-        elif result.get("status") in ["失敗", "取消"]:
+        elif result.get("status") == "失敗":
             report = (
                 "台股數據更新\n"
                 f"日期：{date_str}\n"

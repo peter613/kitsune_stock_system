@@ -1,0 +1,37 @@
+name: Backfill Market Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      dates_to_fix:
+        description: '請輸入要回補的日期，以逗號分隔 (例如: 20260302, 20260303)'
+        required: true
+        type: string
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests python-dotenv supabase pyarrow
+
+      - name: Run Backfill
+        env:
+          GITHUB_ACTIONS: "true"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DATES_TO_FIX: ${{ inputs.dates_to_fix }}
+        run: |
+          python github_action/run_backfill.py

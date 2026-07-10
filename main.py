@@ -49,7 +49,7 @@ def sync_database():
     if market_ok:
         print("market.parquet 完美無缺漏！")
     else:
-        print("[異常] 請進行資料診斷")
+        print("market.parquet 異常!")
         return f"\n\n資料庫問題，中斷程序。"
 
     print('\n\n[4.] 更新基金帳務')
