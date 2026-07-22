@@ -1,3 +1,11 @@
+import os
+import sys
+
+# 把專案根目錄加入 sys.path，確保直接執行時能找到 config 與 backup_db
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+sys.path.append(project_root)
+
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -323,9 +331,11 @@ def update_market_data(specific_date=None):
     if os.path.exists(temp_file): os.remove(temp_file)
         
     action_msg = "已上傳覆寫至 Supabase 雲端" if success else "上傳 Supabase 失敗"
+    status_str = "成功" if success else "失敗"
 
     return {
-        "status": "成功",
+        "status": status_str,
+        "error": action_msg if not success else None,
         "date": standard_date_str,
         "rows": new_count,
         "nans": nan_count,

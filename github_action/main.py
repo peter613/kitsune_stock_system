@@ -77,6 +77,7 @@ def run_daily_job():
     print("[INFO] Executing Market Scraper...")
     
     date_str = datetime.now().strftime('%Y-%m-%d')
+    has_error = False
     
     try:
         # 2. 執行市場更新並取得狀態回報
@@ -94,6 +95,7 @@ def run_daily_job():
                 f"狀態：異常\n\n"
                 f"‧ ERROR：{result.get('error')}"
             )
+            has_error = True
         else:
             report = (
                 "台股數據更新\n"
@@ -112,9 +114,15 @@ def run_daily_job():
             f"狀態：異常\n\n"
             f"‧ ERROR：{str(e)}"
         )
+        has_error = True
         
     # 4. 發送至 Discord
     send_discord_notify(report)
+    
+    # 5. 如果有錯誤，強制回傳非零退出碼，讓 GitHub Actions 顯示失敗 (紅叉)
+    if has_error and is_github_action:
+        print("[ERROR] 執行過程中發生異常，準備強制終止程式 (Exit Code 1)")
+        sys.exit(1)
     print("[INFO] Daily job finished.")
 
 if __name__ == "__main__":
