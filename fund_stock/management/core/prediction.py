@@ -180,7 +180,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     # 4. 存檔
     top_picks = target_df[target_df['rank'].isin(select_ranks)].copy()
     prediction_dir = config.get_version_dir(config.STOCK_PREDICTION_REPORT_DIR, version)
-    file_name = f'{datetime.now().strftime("%Y-%m-%d")}.csv'
+    file_name = f'{latest_date.date().strftime("%Y-%m-%d")}.csv'
     output_dir = prediction_dir / file_name
     try:
         top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')

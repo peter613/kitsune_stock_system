@@ -37,8 +37,6 @@ from fund_stock.administration.update_navpu import update_quant
 # 系統工具定義(指令)
 # =================
 def sync_database():
-    market_ok = diagnose_market()
-
     print('\n\n[1.] 下載 ETF')
     update_etf()
     
@@ -46,6 +44,7 @@ def sync_database():
     sync()
     
     print('\n\n[3.] 資料庫診斷')
+    market_ok = diagnose_market()
     if market_ok:
         print("market.parquet 完美無缺漏！")
     else:

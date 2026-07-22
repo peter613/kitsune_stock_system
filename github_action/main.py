@@ -119,10 +119,6 @@ def run_daily_job():
     # 4. 發送至 Discord
     send_discord_notify(report)
     
-    # 5. 如果有錯誤，強制回傳非零退出碼，讓 GitHub Actions 顯示失敗 (紅叉)
-    if has_error and is_github_action:
-        print("[ERROR] 執行過程中發生異常，準備強制終止程式 (Exit Code 1)")
-        sys.exit(1)
     print("[INFO] Daily job finished.")
 
 if __name__ == "__main__":

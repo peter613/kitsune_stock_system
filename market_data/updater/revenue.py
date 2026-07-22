@@ -147,12 +147,25 @@ def update_revenue():
 
     # 4. 交互確認與存檔
 
-    last_date = old_revenue['date'].max()
-    last_month_count = len(old_revenue[old_revenue['date'] == last_date])
+    # 計算「真正的」上個月 (相對於本次爬取的月份)
+    if month == 1:
+        last_m = 12
+        last_y = year + 1911 - 1
+    else:
+        last_m = month - 1
+        last_y = year + 1911
+    last_month_date = pd.Timestamp(last_y, last_m, 1)
+    
+    last_month_count = len(old_revenue[old_revenue['date'] == last_month_date])
+    
     white_list_exsist = white_list_data[~(white_list_data['market']=='下市櫃')]
     white_list_revenue = new_revenue[new_revenue['id'].isin(white_list_exsist['id'])]
-    print(f'\n白名單 : {len(white_list_revenue)}/{len(white_list_exsist)}筆')
-    print(f"本次新增 {len(new_revenue)} 筆 (上個月筆數: {last_month_count})")
+    
+    white_list_last_month = old_revenue[(old_revenue['date'] == last_month_date) & (old_revenue['id'].isin(white_list_exsist['id']))]
+    last_month_white_list_count = len(white_list_last_month)
+
+    print(f'\n白名單 : {len(white_list_revenue)}/{len(white_list_exsist)}筆  (上個月: {last_month_white_list_count}/{len(white_list_exsist)}筆)')
+    print(f"本次新增 {len(new_revenue)} 筆 (上個月: {last_month_count}筆)")
     print(f"預計更新後營收總筆數: {len(all_revenue)}")
 
     user_input = input('確認資料無誤？ [按 Y 存檔 / 其他鍵取消]: ').strip().lower()

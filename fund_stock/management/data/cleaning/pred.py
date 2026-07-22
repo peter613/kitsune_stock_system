@@ -283,4 +283,4 @@ def create_prediction(stock_filter=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260610')
+    create_prediction(specified_date='20260615')
