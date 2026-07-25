@@ -234,7 +234,7 @@ def main():
             elif action_quant == "模型訓練":
                 # 模型訓練通常會建立新版本，因此保留輸入欄位
                 version = questionary.text(
-                ("請輸入要訓練的模型版本號 (例如 v11):"),
+                (f"請輸入要訓練的模型版本號 (最新: {get_available_versions()[-1] if get_available_versions() else '無'}):"),
                 qmark="",
                 instruction=" ").ask()
                 if version:

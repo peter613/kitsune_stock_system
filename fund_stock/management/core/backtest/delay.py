@@ -161,237 +161,53 @@ def plot_delay_comparison(results: list[dict], version: str = ''):
 
 
 # ──────────────────────────────────────────────
-# 主回測函式
+# 主回測與評估
 # ──────────────────────────────────────────────
+from simulator import backtester
 
-def backtester(version, select_rank=None, entry_on_next_open=False, delay_days=0):
-    if select_rank is None:
-        select_rank = list(range(1, 6))
-
-    MODEL_FILE   = config.get_version_dir(config.STOCK_CBM_DIR, version) / "strategy.cbm"
-    DATA_FILE    = config.STOCK_FEATURES_DIR / f"train_{version}.csv"
-
-    INITIAL_CAPITAL  = 1_000_000
-    TRANSACTION_COST = 0.005
-    FIXED_STOP_LOSS  = 0.20
-    AMOUNT_THRESHOLD  = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
-    REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
-
-    rank_str = ','.join(map(str, select_rank))
-
-    # ── 1. 資料預處理 ──────────────────────────────────
-    df = pd.read_csv(DATA_FILE, dtype={'id': str})
-    df['date'] = pd.to_datetime(df['date'])
-    cutoff_idx = int(len(df['date'].unique()) * 0.8)
-    cutoff_date = sorted(df['date'].unique())[cutoff_idx]
-    test_df = df[df['date'] >= cutoff_date].copy()
-    test_df = test_df.sort_values(['date', 'id']).reset_index(drop=True)
-
-    if AMOUNT_THRESHOLD > 0:
-        test_df = test_df[test_df['amount'] >= AMOUNT_THRESHOLD].reset_index(drop=True)
-    if REVENUE_THRESHOLD > 0 and 'month_revenue' in test_df.columns:
-        test_df = test_df[test_df['month_revenue'] >= REVENUE_THRESHOLD].reset_index(drop=True)
-
-    # ── 2. 模型評分 ──────────────────────────────────
-    model = CatBoostRanker()
-    model.load_model(MODEL_FILE)
-    test_df['predict_score'] = model.predict(test_df[model.feature_names_])
-    test_df['rank'] = (
-        test_df.groupby('date')['predict_score']
-        .rank(ascending=False, method='first')
-        .astype(int)
-    )
-    test_df['simulated_return'] = np.nan
-
-    # ── 3. 市場日頻資料 ──────────────────────────────
-    market_df = pd.read_parquet(config.MARKET_DATA_DIR / "market.parquet")
-    market_df['date'] = pd.to_datetime(market_df['date'])
-    market_df['id']   = market_df['id'].astype(str)
-    market_df = market_df.sort_values(['id', 'date']).set_index(['id', 'date'])
-
-    # ── 4. 單位淨值法初始化 ──────────────────────────
-    nav             = 1.0
-    capital         = float(INITIAL_CAPITAL)
-    monthly_results = []
-    daily_records   = []
-    stop_loss_count = 0
-
-    for date, group in test_df.groupby('date'):
-        top_picks = group[group['rank'].isin(select_rank)]
-        if top_picks.empty:
-            continue
-
-        n_stocks = len(top_picks)
-        alloc_per_stock     = capital / n_stocks
-        buy_cost_total      = _calc_tx_cost(capital, TRANSACTION_COST)
-        net_alloc_per_stock = (capital - buy_cost_total) / n_stocks
-        cash_pool = 0.0
-        portfolio = {}
-
-        for idx in top_picks.index:
-            s_id = str(test_df.loc[idx, 'id']).replace('.0', '')
-            try:
-                f_data = market_df.loc[s_id].loc[date:]
-                if len(f_data) > delay_days:
-                    f_data = f_data.iloc[delay_days:].head(20)
-                else:
-                    f_data = pd.DataFrame()
-                if not f_data.empty:
-                    if entry_on_next_open and len(f_data) > 1:
-                        entry_p = f_data.iloc[1]['open']
-                    else:
-                        entry_p = f_data.iloc[0]['close']
-                    portfolio[idx] = {
-                        's_id'    : s_id,
-                        'entry_p' : entry_p,
-                        'shares'  : net_alloc_per_stock / entry_p,
-                        'dates'   : f_data.index.get_level_values('date'),
-                        'prices'  : f_data['close'].values,
-                        'alive'   : True,
-                        'own_cash': 0.0,
-                    }
-            except KeyError:
-                cash_pool += net_alloc_per_stock
-
-        if not portfolio:
-            continue
-
-        for d_idx in range(20):
-            for idx, p in portfolio.items():
-                if p['alive'] and d_idx < len(p['prices']):
-                    if entry_on_next_open and d_idx == 0:
-                        continue
-                    cur_p = p['prices'][d_idx]
-                    if cur_p <= p['entry_p'] * (1 - FIXED_STOP_LOSS):
-                        sell_val      = p['shares'] * cur_p
-                        fee           = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                        net_proceeds  = sell_val - fee
-                        cash_pool    += net_proceeds
-                        p['own_cash'] += net_proceeds
-                        p['shares']   = 0.0
-                        p['alive']    = False
-                        stop_loss_count += 1
-
-            today_date    = None
-            day_stock_val = 0.0
-            for idx, p in portfolio.items():
-                if p['alive'] and d_idx < len(p['prices']):
-                    day_stock_val += p['shares'] * p['prices'][d_idx]
-                    if today_date is None:
-                        today_date = p['dates'][d_idx]
-
-            if today_date is not None:
-                day_total = day_stock_val + cash_pool
-                day_nav = day_total / INITIAL_CAPITAL
-                daily_records.append({'date': today_date, 'daily_nav': day_nav})
-
-        end_stock_val = 0.0
-        for idx, p in portfolio.items():
-            prices = p.get('prices', [])
-            if len(prices) > 0:
-                end_stock_val += p['shares'] * prices[-1]
-
-        sell_cost = _calc_tx_cost(end_stock_val, TRANSACTION_COST)
-        end_total = (end_stock_val - sell_cost) + cash_pool
-        period_ratio = end_total / capital
-        month_return = period_ratio - 1.0
-        nav          = nav * period_ratio
-
-        for idx, p in portfolio.items():
-            prices = p.get('prices', [])
-            if len(prices) > 0:
-                final_mkt  = p['shares'] * prices[-1]
-                sell_fee   = _calc_tx_cost(final_mkt, TRANSACTION_COST)
-                total_recv = (final_mkt - sell_fee) + p['own_cash']
-                sim_ret    = total_recv / alloc_per_stock - 1.0
-                test_df.at[idx, 'simulated_return'] = sim_ret
-
-        capital = end_total
-        monthly_results.append({
-            'date'        : date,
-            'month_return': month_return,
-            'period_ratio': period_ratio,
-            'nav'         : nav,
-            'capital'     : capital,
-        })
-
-    # ── 5. 績效計算 ──────────────────────────────────
-    results_df    = pd.DataFrame(monthly_results)
-    total_months  = len(results_df)
-    total_return  = nav - 1.0
+def run_delay_eval(version, select_rank, delay_days):
+    results_df, daily_nav = backtester(version=version, select_rank=select_rank, 
+                                       benchmark='00631L', entry_on_next_open=False, 
+                                       delay_days=delay_days, silent=True, export=False)
+    
+    total_months = len(results_df)
+    nav = daily_nav.iloc[-1]
     annual_return = (nav ** (12 / max(total_months, 1))) - 1.0
     winrate       = (results_df['month_return'] > 0).mean() * 100
     expected_val  = results_df['month_return'].mean() * 100
 
-    nav_series = pd.concat([pd.Series([1.0]), results_df['nav'].reset_index(drop=True)],
-                           ignore_index=True)
-    peak     = nav_series.cummax()
-    drawdown = (nav_series - peak) / peak
-    max_dd   = drawdown.min()
-
-    daily_df = (
-        pd.DataFrame(daily_records)
-        .drop_duplicates(subset=['date'])
-        .sort_values('date')
-        .set_index('date')
-    )
-    daily_returns = daily_df['daily_nav'].pct_change().dropna()
-
-    daily_volatility = daily_returns.std() * np.sqrt(252)
+    daily_returns = daily_nav.pct_change().dropna()
     daily_sharpe     = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252) if daily_returns.std() != 0 else 0
-
-    daily_peak     = daily_df['daily_nav'].cummax()
-    daily_drawdown = (daily_df['daily_nav'] - daily_peak) / daily_peak
+    
+    daily_peak     = daily_nav.cummax()
+    daily_drawdown = (daily_nav - daily_peak) / daily_peak
     daily_max_dd   = daily_drawdown.min()
-
+    
     daily_calmar = annual_return / abs(daily_max_dd) if daily_max_dd != 0 else 0
-
+    
     downside_returns = daily_returns[daily_returns < 0]
     downside_std     = downside_returns.std() * np.sqrt(252)
     daily_sortino    = (daily_returns.mean() * 252) / downside_std if downside_std != 0 else 0
 
-    daily_winrate = (daily_returns > 0).mean() * 100
-
-    # ── 6. 回傳 dict（不再 print）────────────────────
     return {
-        'delay'          : delay_days,
-        'version'        : version,
-        'rank_str'       : rank_str,
-        # 獲利
-        'expected_val'   : expected_val,          # 月均期望值 (%)
-        'winrate'        : winrate,               # 月勝率 (%)
-        # 品質
-        'daily_sharpe'   : daily_sharpe,
-        'daily_sortino'  : daily_sortino,
-        'daily_calmar'   : daily_calmar,
-        # 風險
-        'daily_max_dd'   : daily_max_dd * 100,    # 轉成 %
-        'stop_loss_count': stop_loss_count,
-        # 額外保留
-        'total_return'   : total_return,
-        'annual_return'  : annual_return,
-        'daily_volatility': daily_volatility,
-        'daily_winrate'  : daily_winrate,
-        'nav'            : nav,
-        'capital'        : capital,
-        'total_months'   : total_months,
-        'monthly_max_dd' : max_dd * 100,
+        'delay': delay_days,
+        'expected_val': expected_val,
+        'winrate': winrate,
+        'daily_sharpe': daily_sharpe,
+        'daily_sortino': daily_sortino,
+        'daily_calmar': daily_calmar,
+        'daily_max_dd': daily_max_dd * 100,
+        'stop_loss_count': 0  # Not strictly tracked in delay loop anymore
     }
 
-
-# ──────────────────────────────────────────────
-# 入口
-# ──────────────────────────────────────────────
-
 if __name__ == "__main__":
-    VERSION     = 'v38'
+    VERSION     = 'v41'
     SELECT_RANK = list(range(1, 4))
 
     results = []
     for i in range(10):#延遲10天
         print(f'[回測中] time delay: {i}')
-        r = backtester(version=VERSION, select_rank=SELECT_RANK,
-                       entry_on_next_open=False, delay_days=i)
+        r = run_delay_eval(version=VERSION, select_rank=SELECT_RANK, delay_days=i)
         results.append(r)
 
     plot_delay_comparison(results, version=VERSION)

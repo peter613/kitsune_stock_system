@@ -116,7 +116,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 # 主回測函式
 # ──────────────────────────────────────────────
 
-def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open=False):
+def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open=False, delay_days=0, silent=False, export=True):
     if select_rank is None:
         select_rank = list(range(1, 6))
 
@@ -125,13 +125,20 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
 
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
-    FIXED_STOP_LOSS  = 0.20    # 固定停損：入場價跌 20%
     SINGLE_TRADE_CAP = 0.80    # 單筆最高獲利封頂 (80%)
+
     AMOUNT_THRESHOLD  = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
     REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
 
+    FIXED_STOP_LOSS  = 0.15    # 個股固定停損
+    MACRO_STOP_LOSS   = 0.10  # 宏觀防守：總資產跌 10% 全清倉
+
+    MACRO_TAKE_PROFIT = 0.10   # 宏觀停利：總資產漲 10% 啟動減碼
+    TRIM_RATIO        = 0.25   # 減碼比例：達標時賣出 25% 持股
+
     rank_str = ','.join(map(str, select_rank))
-    print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
+    if not silent:
+        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
     df = pd.read_csv(DATA_FILE, dtype={'id': str})
@@ -175,8 +182,11 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     monthly_results = []
     daily_records   = []  # 用於記錄日 NAV 序列
     stop_loss_count = 0
+    macro_stop_count = 0
+    macro_trim_count = 0
 
-    print("進入單位淨值法回測迴圈 (日監控模式)...")
+    if not silent:
+        print("進入單位淨值法回測迴圈 (日監控模式)...")
 
     for date, group in test_df.groupby('date'):
         top_picks = group[group['rank'].isin(select_rank)]
@@ -200,13 +210,13 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         for idx in top_picks.index:
             s_id = str(test_df.loc[idx, 'id']).replace('.0', '')
             try:
-                f_data = market_df.loc[s_id].loc[date:].head(20)
-                if not f_data.empty:
-                    # 開關：是否使用隔日開盤價買進
-                    if entry_on_next_open and len(f_data) > 1:
-                        entry_p = f_data.iloc[1]['open']
+                f_data = market_df.loc[s_id].loc[date:]
+                if len(f_data) > delay_days:
+                    if entry_on_next_open and len(f_data) > delay_days + 1:
+                        entry_p = f_data.iloc[delay_days + 1]['open']
                     else:
-                        entry_p = f_data.iloc[0]['close']
+                        entry_p = f_data.iloc[delay_days]['close']
+                    f_data = f_data.iloc[delay_days:].head(20)
                     portfolio[idx] = {
                         's_id'    : s_id,
                         'entry_p' : entry_p,
@@ -224,29 +234,16 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         if not portfolio:
             continue
 
+        portfolio_liquidated_this_month = False
+        has_trimmed_this_month = False
+
         # ── 日內監控迴圈 ───────────────────────────────
         for d_idx in range(20):
-
-            # 【日檢查】個股停損
-            for idx, p in portfolio.items():
-                if p['alive'] and d_idx < len(p['prices']):
-                    # 若設定隔日開盤買進，則忽略第0天(產生訊號當天)的收盤價停損檢查
-                    if entry_on_next_open and d_idx == 0:
-                        continue
-                    cur_p = p['prices'][d_idx]
-                    if cur_p <= p['entry_p'] * (1 - FIXED_STOP_LOSS):
-                        sell_val      = p['shares'] * cur_p
-                        fee           = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                        net_proceeds  = sell_val - fee
-                        cash_pool    += net_proceeds
-                        p['own_cash'] += net_proceeds   # 記錄屬於該股的回收現金
-                        p['shares']   = 0.0
-                        p['alive']    = False
-                        stop_loss_count += 1
-
-            # 計算當日結算總市值並記錄日 NAV（停損後再計算，反映真實淨值）
-            today_date    = None
-            day_stock_val = 0.0
+            
+            # 1. 計算當日「虛擬」結算總市值
+            today_date = None
+            virtual_day_stock_val = 0.0
+            
             for idx, p in portfolio.items():
                 if p['alive'] and d_idx < len(p['prices']):
                     cur_val = p['shares'] * p['prices'][d_idx]
@@ -254,16 +251,86 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                     max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
                     if cur_val > max_allowed:
                         cur_val = max_allowed
-                    day_stock_val += cur_val
+                    virtual_day_stock_val += cur_val
                     if today_date is None:
                         today_date = p['dates'][d_idx]
+            
+            if today_date is None:
+                continue
+                
+            virtual_day_total = virtual_day_stock_val + cash_pool
+            current_return = (virtual_day_total / capital) - 1.0
+            
+            macro_liquidated_today = False
+            
+            # 2. ==== 宏觀防守與減碼機制 (優先) ====
+            if not portfolio_liquidated_this_month:
+                if current_return <= -MACRO_STOP_LOSS:
+                    # 宏觀停損全清倉
+                    for idx, p in portfolio.items():
+                        if p['alive'] and d_idx < len(p['prices']):
+                            cur_p = p['prices'][d_idx]
+                            sell_val = p['shares'] * cur_p
+                            fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                            net_proceeds = sell_val - fee
+                            cash_pool += net_proceeds
+                            p['own_cash'] += net_proceeds
+                            p['shares'] = 0.0
+                            p['alive'] = False
+                    portfolio_liquidated_this_month = True
+                    macro_liquidated_today = True
+                    macro_stop_count += 1
+                    
+                elif current_return >= MACRO_TAKE_PROFIT and not has_trimmed_this_month:
+                    # 宏觀達標減碼
+                    for idx, p in portfolio.items():
+                        if p['alive'] and d_idx < len(p['prices']):
+                            cur_p = p['prices'][d_idx]
+                            shares_to_sell = p['shares'] * TRIM_RATIO
+                            sell_val = shares_to_sell * cur_p
+                            fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                            net_proceeds = sell_val - fee
+                            cash_pool += net_proceeds
+                            p['own_cash'] += net_proceeds
+                            p['shares'] -= shares_to_sell
+                    has_trimmed_this_month = True
+                    macro_trim_count += 1
+            # ==========================================
+            
+            # 3. 【日檢查】個股停損 (若宏觀未清倉)
+            if not macro_liquidated_today and not portfolio_liquidated_this_month:
+                for idx, p in portfolio.items():
+                    if p['alive'] and d_idx < len(p['prices']):
+                        # 若設定隔日開盤買進，則忽略第0天(產生訊號當天)的收盤價停損檢查
+                        if entry_on_next_open and d_idx == 0:
+                            continue
+                        cur_p = p['prices'][d_idx]
+                        if cur_p <= p['entry_p'] * (1 - FIXED_STOP_LOSS):
+                            sell_val      = p['shares'] * cur_p
+                            fee           = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                            net_proceeds  = sell_val - fee
+                            cash_pool    += net_proceeds
+                            p['own_cash'] += net_proceeds   # 記錄屬於該股的回收現金
+                            p['shares']   = 0.0
+                            p['alive']    = False
+                            stop_loss_count += 1
 
-            if today_date is not None:
-                day_total = day_stock_val + cash_pool
-                # day_total / INITIAL_CAPITAL 等價於 (day_total/capital) * (capital/INITIAL_CAPITAL)
-                # 即「本期內部報酬比例 × 期初累積 NAV」，可正確銜接跨月 NAV 序列
-                day_nav = day_total / INITIAL_CAPITAL
-                daily_records.append({'date': today_date, 'daily_nav': day_nav})
+            # 4. 計算真實日 NAV
+            final_day_stock_val = 0.0
+            for idx, p in portfolio.items():
+                if p['alive'] and d_idx < len(p['prices']):
+                    cur_val = p['shares'] * p['prices'][d_idx]
+                    # 強制獲利封頂
+                    max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
+                    if cur_val > max_allowed:
+                        cur_val = max_allowed
+                    final_day_stock_val += cur_val
+
+            day_total = final_day_stock_val + cash_pool
+            # day_total / INITIAL_CAPITAL 等價於 (day_total/capital) * (capital/INITIAL_CAPITAL)
+            # 即「本期內部報酬比例 × 期初累積 NAV」，可正確銜接跨月 NAV 序列
+            day_nav = day_total / INITIAL_CAPITAL
+            daily_records.append({'date': today_date, 'daily_nav': day_nav})
 
         # ── 月底結算：純 NAV 比率法 ──────────────────────
         # 期末股票總市值（使用每檔最後一筆有效價格）
@@ -357,35 +424,18 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     daily_sortino    = (daily_returns.mean() * 252) / downside_std if downside_std != 0 else 0
 
     daily_winrate = (daily_returns > 0).mean() * 100
-
-    print("\n" + "=" * 80)
-    print(f"回測績效報告 {version}  (Strategy: Rank {rank_str})  [單位淨值法]")
-    print("=" * 80)
-    print(f"初始資金:     {INITIAL_CAPITAL:>12,.0f}")
-    print(f"最終資產:     {int(capital):>12,}")
-    print(f"期末單位淨值: {nav:>12.4f}")
-    print(f"總報酬率:     {total_return*100:>10.2f}%")
-    print(f"年化報酬:     {annual_return*100:>10.2f}%")
-    print("-" * 80)
-    print(f"月均期望值:   {expected_val:>10.2f}%")
-    print(f"月勝率:       {winrate:>10.2f}%")
-    print(f"月最大回撤:   {max_dd*100:>10.2f}%")
-    print("-" * 80)
-    print(f"日波動率:     {daily_volatility*100:>10.2f}%")
-    print(f"日最大回撤:   {daily_max_dd*100:>10.2f}%")
-    print(f"日 Sharpe:    {daily_sharpe:>10.2f}")
-    print(f"日 Calmar:    {daily_calmar:>10.2f}")
-    print(f"日 Sortino:   {daily_sortino:>10.2f}")
-    print(f"日勝率:       {daily_winrate:>10.2f}%")
-    print("-" * 80)
-    print(f"月數:              {total_months}")
-    print(f"{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
-    print("=" * 80)
+    
+    # 月盈虧比
+    monthly_wins = results_df['month_return'][results_df['month_return'] > 0]
+    monthly_losses = results_df['month_return'][results_df['month_return'] < 0]
+    monthly_profit_factor = monthly_wins.sum() / abs(monthly_losses.sum()) if monthly_losses.sum() != 0 else float('inf')
+    monthly_win_loss_ratio = monthly_wins.mean() / abs(monthly_losses.mean()) if len(monthly_losses) > 0 and monthly_losses.mean() != 0 else float('inf')
 
     # ──────────────────────────────────────────────
     # 6. 對照組
     # ──────────────────────────────────────────────
-    print(f"讀取對照組 ({benchmark})...")
+    if not silent:
+        print(f"讀取對照組 ({benchmark})...")
     benchmark_nav    = None
     bench_total_ret  = 0.0
     bench_annual_ret = 0.0
@@ -411,11 +461,62 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                     n_years          = (bdf.index[-1] - bdf.index[0]).days / 365.25
                     bench_annual_ret = (benchmark_nav.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
             else:
-                print(f"警告：etf.csv 中找不到 {benchmark} 欄位。")
+                if not silent: print(f"警告：etf.csv 中找不到 {benchmark} 欄位。")
         else:
-            print(f"找不到 {etf_path}，跳過對照組。")
+            if not silent: print(f"找不到 {etf_path}，跳過對照組。")
     except Exception as e:
-        print(f"對照組讀取失敗: {e}")
+        if not silent: print(f"對照組讀取失敗: {e}")
+
+
+    # Alpha & Beta 計算
+    beta = 0.0
+    alpha = 0.0
+    if not bdf.empty and benchmark in bdf.columns:
+        # 計算基準日報酬
+        bdf['bench_ret'] = bdf[benchmark].pct_change().dropna()
+        # 對齊日期
+        align_df = pd.concat([daily_returns, bdf['bench_ret']], axis=1, join='inner').dropna()
+        if len(align_df) > 1:
+            cov = align_df.cov().iloc[0, 1]
+            var = align_df['bench_ret'].var()
+            beta = cov / var if var != 0 else 0.0
+            # Alpha = 策略日均報酬 - Beta * 大盤日均報酬
+            # 轉換成年化 Alpha
+            daily_alpha = align_df['daily_nav'].mean() - beta * align_df['bench_ret'].mean()
+            alpha = daily_alpha * 252
+
+    if not silent:
+        print("\n" + "=" * 80)
+        print(f"回測績效報告 {version}  (Strategy: Rank {rank_str})  [單位淨值法]")
+        print("=" * 80)
+        print(f"初始資金:     {INITIAL_CAPITAL:>12,.0f}")
+        print(f"最終資產:     {int(capital):>12,}")
+        print(f"期末單位淨值: {nav:>12.4f}")
+        print(f"總報酬率:     {total_return*100:>10.2f}%")
+        print(f"年化報酬:     {annual_return*100:>10.2f}%")
+        print("-" * 80)
+        print(f"月均期望值:   {expected_val:>10.2f}%")
+        print(f"月勝率:       {winrate:>10.2f}%")
+        print(f"月最大回撤:   {max_dd*100:>10.2f}%")
+        print(f"月盈虧比:     {monthly_profit_factor:>10.2f}")
+        print(f"月平均賺賠比: {monthly_win_loss_ratio:>10.2f}")
+        print("-" * 80)
+        print(f"日波動率:     {daily_volatility*100:>10.2f}%")
+        print(f"日最大回撤:   {daily_max_dd*100:>10.2f}%")
+        print(f"日 Sharpe:    {daily_sharpe:>10.2f}")
+        print(f"日 Calmar:    {daily_calmar:>10.2f}")
+        print(f"日 Sortino:   {daily_sortino:>10.2f}")
+        print(f"日勝率:       {daily_winrate:>10.2f}%")
+        print("-" * 80)
+        print(f"Beta (大盤): {beta:>10.2f}")
+        print(f"Alpha(年化):  {alpha*100:>10.2f}%")
+        print("-" * 80)
+        print(f"月數:              {total_months}")
+        print(f"{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
+        print(f"宏觀停損觸發:      {macro_stop_count} 次")
+        print(f"宏觀減碼觸發:      {macro_trim_count} 次")
+        print("=" * 80)
+
 
     # ──────────────────────────────────────────────
     # 7. 圖表（兩張子圖合成一張 figure，統一 plt.show()）
@@ -438,84 +539,84 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     )
 
     # 圖表 1：NAV 走勢
-    fig1, ax1 = plt.subplots(figsize=(14, 5))
-    label_ai = (f'Rank {rank_str}  |  NAV {nav:.3f}  '
-                f'({total_return*100:.0f}%  /  Annual {annual_return*100:.1f}%)')
-    ax1.plot(results_df['date'], results_df['nav'],
-             label=label_ai, color='crimson', linewidth=2)
+    if not silent:
+        fig1, ax1 = plt.subplots(figsize=(14, 5))
+        label_ai = (f'Rank {rank_str}  |  NAV {nav:.3f}  '
+                    f'({total_return*100:.0f}%  /  Annual {annual_return*100:.1f}%)')
+        ax1.plot(results_df['date'], results_df['nav'],
+                 label=label_ai, color='crimson', linewidth=2)
 
-    if benchmark_nav is not None:
-        label_b = (f'{benchmark}  |  NAV {benchmark_nav.iloc[-1]:.3f}  '
-                   f'({bench_total_ret*100:.0f}%  /  Annual {bench_annual_ret*100:.1f}%)')
-        ax1.plot(bdf.index, benchmark_nav,
-                 label=label_b, color='steelblue', linestyle='--', alpha=0.75)
+        if benchmark_nav is not None:
+            label_b = (f'{benchmark}  |  NAV {benchmark_nav.iloc[-1]:.3f}  '
+                       f'({bench_total_ret*100:.0f}%  /  Annual {bench_annual_ret*100:.1f}%)')
+            ax1.plot(bdf.index, benchmark_nav,
+                     label=label_b, color='steelblue', linestyle='--', alpha=0.75)
 
-    ax1.axhline(1.0, color='gray', linewidth=0.8, linestyle=':')
-    ax1.set_title(f'Cumulative NAV  —  Rank {rank_str} vs {benchmark}')
-    ax1.set_ylabel('NAV (base=1.0)')
-    ax1.legend(loc='upper left')
-    ax1.grid(True, alpha=0.3)
-    
-    # 存檔 圖表 1
-    plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
-    fig1_path = plot_dir / f"nav_curve_rank_{rank_str.replace(',', '_')}.png"
-    fig1.savefig(fig1_path, dpi=300, bbox_inches='tight')
-
-    # 圖表 2：Rank 期望值長條圖
-    fig2, ax2 = plt.subplots(figsize=(14, 5))
-
-    mean_avg_return = rank_stats['avg_return'].mean()
-    # Rank 1–5 顯示紅色，其餘顯示藍色
-    colors = ['crimson' if r in select_rank else 'steelblue' for r in rank_stats['rank']]
-
-    bars = ax2.bar(rank_stats['rank'], rank_stats['avg_return'],
-                   color=colors, alpha=0.8)
-
-    ax2.set_title(f'Avg Return & Win Rate by Rank  (Red = Selected Ranks, Mean: {mean_avg_return:.2f}%)')
-    ax2.set_xlabel('Rank')
-    ax2.set_ylabel('Avg Return (%)')
-    ax2.set_xticks(rank_stats['rank'])
-    ax2.axhline(0, color='gray', linewidth=0.8)
-    ax2.axhline(mean_avg_return, color='green', linestyle='--', linewidth=0.8,
-                alpha=0.7, label='Average Return')
-    ax2.legend(loc='upper right')
-    ax2.grid(axis='y', alpha=0.3)
-
-    for bar, row in zip(bars, rank_stats.itertuples()):
-        yval   = bar.get_height()
-        va     = 'bottom' if yval >= 0 else 'top'
-        offset = 0.08 if yval >= 0 else -0.08
-        ax2.text(
-            bar.get_x() + bar.get_width() / 2,
-            yval + offset,
-            f'{row.avg_return:.2f}%\n(W:{row.winrate:.1f}%)\n'
-            f'Max:{row.max_return:.1f}%\nMin:{row.min_return:.1f}%',
-            ha='center', va=va, fontsize=8,
-        )
+        ax1.axhline(1.0, color='gray', linewidth=0.8, linestyle=':')
+        ax1.set_title(f'Cumulative NAV  —  Rank {rank_str} vs {benchmark}')
+        ax1.set_ylabel('NAV (base=1.0)')
+        ax1.legend(loc='upper left')
+        ax1.grid(True, alpha=0.3)
         
-    # 存檔 圖表 2
-    fig2_path = plot_dir / "rank_expected_return.png"
-    fig2.savefig(fig2_path, dpi=300, bbox_inches='tight')
+        # 存檔 圖表 1
+        plot_dir = config.get_version_dir(config.STOCK_PLOTS_DIR, version)
+        fig1_path = plot_dir / f"nav_curve_rank_{rank_str.replace(',', '_')}.png"
+        fig1.savefig(fig1_path, dpi=300, bbox_inches='tight')
 
-    print(f"圖表已存檔至: {plot_dir}")
-    print("圖表產生完畢，關閉視窗後程式繼續執行...")
-    # plt.show()   # ← 唯一一次 show，會同時顯示 fig1 與 fig2，避免 tkinter mainloop 衝突
+        # 圖表 2：Rank 期望值長條圖
+        fig2, ax2 = plt.subplots(figsize=(14, 5))
+
+        mean_avg_return = rank_stats['avg_return'].mean()
+        # Rank 1–5 顯示紅色，其餘顯示藍色
+        colors = ['crimson' if r in select_rank else 'steelblue' for r in rank_stats['rank']]
+
+        bars = ax2.bar(rank_stats['rank'], rank_stats['avg_return'],
+                       color=colors, alpha=0.8)
+
+        ax2.set_title(f'Avg Return & Win Rate by Rank  (Red = Selected Ranks, Mean: {mean_avg_return:.2f}%)')
+        ax2.set_xlabel('Rank')
+        ax2.set_ylabel('Avg Return (%)')
+        ax2.set_xticks(rank_stats['rank'])
+        ax2.axhline(0, color='gray', linewidth=0.8)
+        ax2.axhline(mean_avg_return, color='green', linestyle='--', linewidth=0.8,
+                    alpha=0.7, label='Average Return')
+        ax2.legend(loc='upper right')
+        ax2.grid(axis='y', alpha=0.3)
+
+        for bar, row in zip(bars, rank_stats.itertuples()):
+            yval   = bar.get_height()
+            va     = 'bottom' if yval >= 0 else 'top'
+            offset = 0.08 if yval >= 0 else -0.08
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2,
+                yval + offset,
+                f'{row.avg_return:.2f}%\n(W:{row.winrate:.1f}%)\n'
+                f'Max:{row.max_return:.1f}%\nMin:{row.min_return:.1f}%',
+                ha='center', va=va, fontsize=8,
+            )
+            
+        # 存檔 圖表 2
+        fig2_path = plot_dir / "rank_expected_return.png"
+        fig2.savefig(fig2_path, dpi=300, bbox_inches='tight')
+
+        print(f"圖表已存檔至: {plot_dir}")
+        print("圖表產生完畢，關閉視窗後程式繼續執行...")
+        # plt.show()   # ← 唯一一次 show，會同時顯示 fig1 與 fig2，避免 tkinter mainloop 衝突
 
     # ──────────────────────────────────────────────
     # 8. 匯出交易日誌
     # ──────────────────────────────────────────────
-    LOG_DIR      = config.get_version_dir(config.STOCK_BACKTEST_TRADELOG_DIR, version)
-    csv_filename = LOG_DIR / f"trade_log_rank_{rank_str.replace(',', '_')}.csv"
-    export_full_trade_log(
-        test_df     = test_df,
-        filename    = csv_filename,
-        select_rank = select_rank,
-        model       = model,
-    )
+    if export:
+        LOG_DIR      = config.get_version_dir(config.STOCK_BACKTEST_TRADELOG_DIR, version)
+        csv_filename = LOG_DIR / f"trade_log_rank_{rank_str.replace(',', '_')}.csv"
+        export_full_trade_log(
+            test_df     = test_df,
+            filename    = csv_filename,
+            select_rank = select_rank,
+            model       = model,
+        )
 
-    return results_df, nav_series
-
+    return results_df, daily_df['daily_nav']
 
 if __name__ == "__main__":
-    # 您可以在這裡調整 entry_on_next_open=True 測試「隔日開盤買進」的實戰滑價效果
-    backtester(version='v38', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)
+    backtester(version='v41', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)

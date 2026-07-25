@@ -244,6 +244,11 @@ def create_prediction(stock_filter=True, specified_date=None):
     final_predict_df["liq_rank"] = final_predict_df["amount_ema_20"].rank(ascending=False, method='min')
     final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)]
 
+    print("計算高流動性科技股專屬廣度 (Tech Market Breadth)...")
+    final_predict_df['market_kama_mean'] = final_predict_df['kama'].mean()
+    final_predict_df['market_adx_mean'] = final_predict_df['adx'].mean()
+    final_predict_df['market_res_20_mean'] = final_predict_df['resistance_20'].mean()
+
     AMOUNT_THRESHOLD = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
     REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
     
@@ -259,15 +264,17 @@ def create_prediction(stock_filter=True, specified_date=None):
         # 趨勢強度
         "kama", "adx",
 
-        # 流動性與動能排名 
-        "amount_rank",
-        'rs_rank_20', 'rs_rank_60',
+        # 宏觀環境
+        "market_kama_mean", "market_adx_mean", "market_res_20_mean",
+
+        # 流動性與動能 
+        'hist_return_20', 'hist_return_60',
         
-        # 籌碼與法人動能
+        # 籌碼0與1
         "trust_in",
 
         # 基本面
-        "yoy", 'rev_breakout_12', "rev_bias_3", 
+        "yoy", "rev_bias_3", 'rev_breakout_12',
 
         # 位階
         "breakout_200",
@@ -283,4 +290,4 @@ def create_prediction(stock_filter=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260615')
+    create_prediction(specified_date='20260713')

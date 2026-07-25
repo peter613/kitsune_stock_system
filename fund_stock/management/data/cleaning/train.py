@@ -7,7 +7,7 @@ from datetime import datetime
 import gc
 import config
 
-def create_training(version='v37', years_10=True, stock_filter=True):
+def create_training(version='v39', years_10=True, stock_filter=True):
     file_save_name = config.STOCK_FEATURES_DIR / f'train_{version}.csv'
 
     # ---------------------------------------------------------
@@ -24,26 +24,6 @@ def create_training(version='v37', years_10=True, stock_filter=True):
     # 強制執行時間格式化 (解決 .dt 報錯)
     df['date'] = pd.to_datetime(df['date'])
     df_revenue['date'] = pd.to_datetime(df_revenue['date'])
-
-    # 讀取 ETF 大盤資料 (0050)
-    etf_path = config.MARKET_DATA_DIR / 'etf.csv'
-    if os.path.exists(etf_path):
-        df_etf = pd.read_csv(etf_path)
-        if '0050' in df_etf.columns:
-            df_etf = df_etf[['date', '0050']].rename(columns={'0050': 'etf_close'})
-            df_etf['date'] = pd.to_datetime(df_etf['date'])
-            
-            # 確保大盤資料對齊所有的交易日，並且 ffill 避免 NaN 毒化 TA-Lib
-            all_dates = pd.DataFrame({'date': df['date'].unique()}).sort_values('date')
-            all_dates = pd.merge(all_dates, df_etf, on='date', how='left')
-            all_dates['etf_close'] = all_dates['etf_close'].ffill().bfill()
-            
-            df = pd.merge(df, all_dates, on='date', how='left')
-        else:
-            df['etf_close'] = np.nan
-    else:
-        df['etf_close'] = np.nan
-
 
     # 強制執行 ID 格式化 (解決 Merge 衝突與補零)
     for data in [df, df_revenue]:
@@ -148,7 +128,7 @@ def create_training(version='v37', years_10=True, stock_filter=True):
         close_shifted[-20:] = np.nan
         return_20d = (close_shifted / (close + 1e-9)) - 1
         
-        # ── 計算過去 20 日與 60 日歷史報酬 (計算動能排名用) ──────────────────
+        # ── 計算過去 20 日與 60 日歷史報酬 ──────────────────
         close_past = np.empty(len(close))
         close_past[20:] = close[:-20]
         close_past[:20] = np.nan
@@ -261,6 +241,11 @@ def create_training(version='v37', years_10=True, stock_filter=True):
 
     final_df = final_df.dropna().reset_index(drop=True)
 
+    print("計算高流動性科技股專屬廣度 (Tech Market Breadth)...")
+    final_df['market_kama_mean'] = final_df.groupby('date')['kama'].transform('mean')
+    final_df['market_adx_mean'] = final_df.groupby('date')['adx'].transform('mean')
+    final_df['market_res_20_mean'] = final_df.groupby('date')['resistance_20'].transform('mean')
+
     # 截面排名標籤 (0~1)
     final_df['label'] = final_df.groupby('date')['return_20d'].rank(pct=True)
 
@@ -272,4 +257,4 @@ def create_training(version='v37', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v38', years_10=True, stock_filter=True)
+    create_training(version='v41', years_10=True, stock_filter=True)
