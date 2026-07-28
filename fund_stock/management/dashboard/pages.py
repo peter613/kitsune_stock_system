@@ -255,8 +255,8 @@ def page_fund_return(df_history):
 
     col1, col2, col3 = st.columns(3)
     col1.metric("累積報酬",  f"{roi_window:.2f}%")
-    col2.metric("0050 報酬", f"{bm_0050:.2f}%",   help=f"超額報酬: {alpha_0050:+.2f}%\nBeta: {beta_0050:.2f}")
-    col3.metric("正二 報酬", f"{bm_00631L:.2f}%", help=f"超額報酬: {alpha_631L:+.2f}%\nBeta: {beta_631L:.2f}")
+    col2.metric("0050 報酬", f"{bm_0050:.2f}%",   help=f"超額報酬: {alpha_0050:+.2f}%")
+    col3.metric("正二 報酬", f"{bm_00631L:.2f}%", help=f"超額報酬: {alpha_631L:+.2f}%")
 
     configs = [
         {"col": "roi_total",  "name": "投資組合",      "color": "#4F247E", "width": 3.5, "visible": True,         "dash": "solid"},
