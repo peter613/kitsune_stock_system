@@ -296,3 +296,59 @@ def generate_system_alerts(df_record, df_price, df_0050, unrealized_data):
     #alerts.extend(_check_rebalance_alerts(df_record, df_price))
     
     return alerts
+
+
+# ──────────────────────────────────────────
+# 模組 4：品質指標與系統共異變分析
+# ──────────────────────────────────────────
+def calc_beta(r_p, r_m):
+    if len(r_p) < 2 or len(r_m) < 2 or r_m.var() == 0:
+        return 0.0
+    return np.cov(r_p, r_m)[0, 1] / np.var(r_m, ddof=1)
+
+
+def calc_dd_series(s):
+    peak = (1 + s).cummax()
+    return ((1 + s) - peak) / peak * 100
+
+
+def calculate_quality_comparison(df_history):
+    """
+    產生標的品質指標對照表格 DataFrame
+    """
+    if df_history.empty:
+        return pd.DataFrame()
+
+    ret_0050 = df_history['roi_0050'].diff().dropna()
+
+    def _calc_row(roi_series, label, bm_ret_series=None):
+        d_ret = roi_series.diff().dropna()
+        if len(d_ret) == 0:
+            return {"標的": label, "Sharpe": "0.00", "Sortino": "0.00", "Calmar": "0.00", "波動率": "0.0%", "Beta": "0.00", "最大回撤": "0.00%"}
+        first_val = roi_series.iloc[0]
+        last_val  = roi_series.iloc[-1]
+        roi_win   = ((1 + last_val) / (1 + first_val) - 1) * 100
+        m_dd      = calc_dd_series(roi_series).min()
+        sh        = (d_ret.mean() / d_ret.std() * (252 ** 0.5)) if d_ret.std() > 0 else 0
+        down_std  = d_ret[d_ret < 0].std()
+        so        = (d_ret.mean() / down_std * (252 ** 0.5)) if down_std > 0 else 0
+        ann_r     = (1 + roi_win / 100) ** (252 / max(len(roi_series), 1)) - 1
+        ca        = ann_r / abs(m_dd / 100) if m_dd < 0 else 0
+        vo        = d_ret.std() * (252 ** 0.5) * 100
+        be        = calc_beta(d_ret, bm_ret_series) if bm_ret_series is not None else 1.00
+        return {
+            "標的": label,
+            "Sharpe": f"{sh:.2f}",
+            "Sortino": f"{so:.2f}",
+            "Calmar": f"{ca:.2f}",
+            "波動率": f"{vo:.1f}%",
+            "Beta": f"{be:.2f}",
+            "最大回撤": f"{m_dd:.2f}%"
+        }
+
+    rows = [
+        _calc_row(df_history['roi_total'],  "基金",        ret_0050),
+        _calc_row(df_history['roi_0050'],   "大盤(0050)",   ret_0050),
+        _calc_row(df_history['roi_00631L'], "正二(00631L)", ret_0050),
+    ]
+    return pd.DataFrame(rows)
