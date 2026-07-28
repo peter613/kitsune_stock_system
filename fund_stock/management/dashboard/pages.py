@@ -13,6 +13,11 @@ import streamlit as st
 
 from fund_stock.management.dashboard.engine import calculate_settlement_data
 
+def _calc_beta(r_p, r_m):
+    if len(r_p) < 2 or len(r_m) < 2 or r_m.var() == 0:
+        return 0.0
+    return np.cov(r_p, r_m)[0, 1] / np.var(r_m, ddof=1)
+
 # ══════════════════════════════════════════
 # 初始化繪圖格式
 # ══════════════════════════════════════════
@@ -241,12 +246,17 @@ def page_fund_return(df_history):
     alpha_631L = roi_window - bm_00631L
 
     daily_ret  = df_history['roi_total'].diff().dropna()
+    ret_0050   = df_history['roi_0050'].diff().dropna()
+    ret_00631L = df_history['roi_00631L'].diff().dropna()
+
+    beta_0050  = _calc_beta(daily_ret, ret_0050)
+    beta_631L  = _calc_beta(daily_ret, ret_00631L)
     win_rate   = (daily_ret > 0).sum() / len(daily_ret) * 100
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("累積報酬",        f"{roi_window:.2f}%")
-    col2.metric("超額報酬 (0050)", f"{alpha_0050:.2f}%")
-    col3.metric("超額報酬 (00631L)", f"{alpha_631L:.2f}%")
+    col1.metric("累積報酬",  f"{roi_window:.2f}%")
+    col2.metric("0050 報酬", f"{bm_0050:.2f}%",   help=f"超額報酬: {alpha_0050:+.2f}%")
+    col3.metric("正二 報酬", f"{bm_00631L:.2f}%", help=f"超額報酬: {alpha_631L:+.2f}%")
 
     configs = [
         {"col": "roi_total",  "name": "投資組合",      "color": "#4F247E", "width": 3.5, "visible": True,         "dash": "solid"},
@@ -337,30 +347,92 @@ def page_fund_quality(df_history):
     sortino = (daily_ret.mean() / downside_std * (252 ** 0.5)) if downside_std > 0 else 0
     ann_ret    = (1 + roi_window / 100) ** (252 / max(len(df_history), 1)) - 1
     calmar     = ann_ret / abs(max_dd / 100) if max_dd < 0 else 0
-    port_vol = daily_ret.std() * (252 ** 0.5) * 100
+    port_vol   = daily_ret.std() * (252 ** 0.5) * 100
+    ret_0050   = df_history['roi_0050'].diff().dropna()
+    beta_0050  = _calc_beta(daily_ret, ret_0050)
 
-    col1, col2, col3, col4,col5 = st.columns(5)
-    col1.metric("Sharpe",   f"{sharpe:.2f}")
-    col2.metric("Sortino",   f"{sortino:.2f}")
-    col3.metric("Calmar",   f"{calmar:.2f}")
-    col4.metric("波動率",   f"{port_vol:.1f}%")
-    col5.metric("最大回撤", f"{max_dd:.2f}%")
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric("Sharpe",     f"{sharpe:.2f}")
+    col2.metric("Sortino",    f"{sortino:.2f}")
+    col3.metric("Calmar",     f"{calmar:.2f}")
+    col4.metric("波動率",     f"{port_vol:.1f}%")
+    col5.metric("Beta", f"{beta_0050:.2f}")
+    col6.metric("最大回撤",   f"{max_dd:.2f}%")
 
+    def _calc_dd(s):
+        peak = (1 + s).cummax()
+        return ((1 + s) - peak) / peak * 100
 
-    # ── 圖2：回撤面積圖 ──
+    dd_port   = df_history['dd_pct'] * 100
+    dd_0050   = _calc_dd(df_history['roi_0050'])
+    dd_00631L = _calc_dd(df_history['roi_00631L'])
+
+    # ── 圖2：回撤面積圖 (加入對照線) ──
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(
         x=df_history['date'],
-        y=df_history['dd_pct'] * 100,
+        y=dd_port,
         fill='tozeroy',
         fillcolor='rgba(255,51,51,0.08)',
-        line=dict(color="#C0392B", width=0.5),
-        name="回撤",
+        line=dict(color="#C0392B", width=1.5),
+        name="投資組合",
+        visible=True,
         hovertemplate='%{y:.2f}%<extra></extra>'
     ))
-    fig1.update_layout(**customize_plotly("回撤 (%)"), showlegend=False)
+    fig1.add_trace(go.Scatter(
+        x=df_history['date'],
+        y=dd_0050,
+        line=dict(color="#9E9E9E", width=1.5, dash="dash"),
+        name="大盤 (0050)",
+        visible=True,
+        hovertemplate='%{y:.2f}%<extra></extra>'
+    ))
+    fig1.add_trace(go.Scatter(
+        x=df_history['date'],
+        y=dd_00631L,
+        line=dict(color="#B39DDB", width=1.5, dash="dash"),
+        name="正二 (00631L)",
+        visible="legendonly",
+        hovertemplate='%{y:.2f}%<extra></extra>'
+    ))
+    fig1.update_layout(**customize_plotly("回撤 (%)"), showlegend=True)
     fig1.update_xaxes(rangeslider=dict(visible=False), type="date")
     st.plotly_chart(fig1, width='stretch')
+
+    # ── 標的品質指標對照表格 (置於回撤圖下方) ──
+    def _calc_quality_row(roi_series, label, bm_ret_series=None):
+        d_ret = roi_series.diff().dropna()
+        if len(d_ret) == 0:
+            return {"標的": label, "Sharpe": "0.00", "Sortino": "0.00", "Calmar": "0.00", "波動率": "0.0%", "Beta (大盤)": "0.00", "最大回撤": "0.00%"}
+        first_val = roi_series.iloc[0]
+        last_val  = roi_series.iloc[-1]
+        roi_win   = ((1 + last_val) / (1 + first_val) - 1) * 100
+        m_dd      = _calc_dd(roi_series).min()
+        sh        = (d_ret.mean() / d_ret.std() * (252 ** 0.5)) if d_ret.std() > 0 else 0
+        down_std  = d_ret[d_ret < 0].std()
+        so        = (d_ret.mean() / down_std * (252 ** 0.5)) if down_std > 0 else 0
+        ann_r     = (1 + roi_win / 100) ** (252 / max(len(roi_series), 1)) - 1
+        ca        = ann_r / abs(m_dd / 100) if m_dd < 0 else 0
+        vo        = d_ret.std() * (252 ** 0.5) * 100
+        be        = _calc_beta(d_ret, bm_ret_series) if bm_ret_series is not None else 1.00
+        return {
+            "標的": label,
+            "Sharpe": f"{sh:.2f}",
+            "Sortino": f"{so:.2f}",
+            "Calmar": f"{ca:.2f}",
+            "波動率": f"{vo:.1f}%",
+            "Beta": f"{be:.2f}",
+            "最大回撤": f"{m_dd:.2f}%"
+        }
+
+    st.subheader("品質比較表")
+    quality_rows = [
+        _calc_quality_row(df_history['roi_total'],  "基金",        ret_0050),
+        _calc_quality_row(df_history['roi_0050'],   "大盤(0050)",   ret_0050),
+        _calc_quality_row(df_history['roi_00631L'], "正二(00631L)", ret_0050),
+    ]
+    df_quality_table = pd.DataFrame(quality_rows)
+    st.dataframe(df_quality_table, width='stretch', hide_index=True)
 
 # ══════════════════════════════════════════
 # 頁面 5：狐狸基金資產配置

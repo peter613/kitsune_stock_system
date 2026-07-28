@@ -498,8 +498,8 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         print(f"月均期望值:   {expected_val:>10.2f}%")
         print(f"月勝率:       {winrate:>10.2f}%")
         print(f"月最大回撤:   {max_dd*100:>10.2f}%")
-        print(f"月盈虧比:     {monthly_profit_factor:>10.2f}")
-        print(f"月平均賺賠比: {monthly_win_loss_ratio:>10.2f}")
+        print(f"月盈虧比(總賺/總賠):     {monthly_profit_factor:>10.2f}")
+        print(f"月賺賠比(每筆賺/每筆賠): {monthly_win_loss_ratio:>10.2f}")
         print("-" * 80)
         print(f"日波動率:     {daily_volatility*100:>10.2f}%")
         print(f"日最大回撤:   {daily_max_dd*100:>10.2f}%")
@@ -508,7 +508,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         print(f"日 Sortino:   {daily_sortino:>10.2f}")
         print(f"日勝率:       {daily_winrate:>10.2f}%")
         print("-" * 80)
-        print(f"Beta (大盤): {beta:>10.2f}")
+        print(f"Beta (benchmark): {beta:>10.2f}")
         print(f"Alpha(年化):  {alpha*100:>10.2f}%")
         print("-" * 80)
         print(f"月數:              {total_months}")
@@ -619,4 +619,4 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     return results_df, daily_df['daily_nav']
 
 if __name__ == "__main__":
-    backtester(version='v41', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)
+    backtester(version='v41', select_rank=list(range(1, 4)), benchmark='0050', entry_on_next_open=False)
