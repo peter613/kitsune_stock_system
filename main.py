@@ -32,6 +32,7 @@ from fund_stock.management.data.cleaning.train import create_training
 from fund_stock.management.data.cleaning.pred import create_prediction
 from fund_stock.management.core.create_cbm import create_cbm
 from fund_stock.administration.update_navpu import update_quant
+from fund_stock.macro_research.market_temper import analyze_market_temper
 
 # =================
 # 系統工具定義(指令)
@@ -197,8 +198,9 @@ def main():
             action_quant = questionary.select(
                 "請選擇要執行的量化模組：\n",
                 choices=[
-                    "回測",
                     "預測",
+                    "科技市場溫度",
+                    "回測",
                     "模型訓練",
                     "返回主選單"
                 ],
@@ -216,10 +218,13 @@ def main():
                 version = questionary.select("請選擇模型版本：", choices=versions,qmark="",instruction=" ").ask()
                 
                 if version:
-                    if action_quant == "回測":
+                    if action_quant == "預測":
+                        run_prediction(version)
+
+                    elif action_quant == "回測":
                         benchmark = questionary.select(
                             "請選擇 Benchmark：",
-                            choices=["0050.TW", "00631L.TW"],
+                            choices=["0050", "00631L"],
                         qmark="",
                         instruction=" "
                         ).ask()
@@ -227,9 +232,6 @@ def main():
                         if benchmark:
                             res = run_backtest(version, benchmark=benchmark)
                             print(f"{res}")
-                            
-                    elif action_quant == "預測":
-                        run_prediction(version)
 
             elif action_quant == "模型訓練":
                 # 模型訓練通常會建立新版本，因此保留輸入欄位
@@ -240,6 +242,10 @@ def main():
                 if version:
                     res = train_model(version)
                     print(f"{res}")
+
+            elif action_quant == "科技市場溫度":
+                print("\n[科技市場溫度分析中...]")
+                analyze_market_temper()
 
         elif action_home == "儀表板模組":
             action_dashboard = questionary.select(

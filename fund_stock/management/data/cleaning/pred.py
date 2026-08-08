@@ -135,10 +135,16 @@ def create_prediction(stock_filter=True, specified_date=None):
         # 距離近期地板多遠？ (接近1 代表回踩支撐)
         support_20 = close / (box_sup_20 + 1e-9)
 
+        # ── 法人籌碼 ──────────────────────────────────────────
         trust_period = 10
         is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
         zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
         trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
+
+        # ── 波動與量能 ──────────────────────────────
+        vol_sma_20 = SMA(volume, timeperiod=20)
+        vol_surge = volume / (vol_sma_20 + 1e-9)
+        vol_surge_signed = volume / (vol_sma_20 + 1e-9) * np.where((trust_net + foreign_net) > 0, 1.0, -1.0)
 
         close_past = np.empty(len(close))
         close_past[20:] = close[:-20]
@@ -162,6 +168,8 @@ def create_prediction(stock_filter=True, specified_date=None):
             'trust_in'      : trust_in,
             'hist_return_20': hist_return_20,
             'hist_return_60': hist_return_60,
+            'vol_surge'     : vol_surge,
+            'vol_surge_signed': vol_surge_signed
         }
         for col, arr in cols.items():
             group[col] = arr
@@ -235,6 +243,16 @@ def create_prediction(stock_filter=True, specified_date=None):
 
     
     print("處理截面特徵 (Cross-Sectional)...")
+    def zero_centered_rank(x):
+        res = pd.Series(0.0, index=x.index)
+        pos = x > 0
+        neg = x < 0
+        if pos.sum() > 0:
+            res[pos] = x[pos].rank(pct=True)
+        if neg.sum() > 0:
+            res[neg] = x[neg].rank(ascending=False, pct=True) * -1.0
+        return res
+
     final_predict_df["amount_rank"] = final_predict_df["amount_20"].rank(pct=True)
     final_predict_df["rs_rank_20"] = final_predict_df["hist_return_20"].rank(pct=True)
     final_predict_df["rs_rank_60"] = final_predict_df["hist_return_60"].rank(pct=True)
@@ -268,7 +286,8 @@ def create_prediction(stock_filter=True, specified_date=None):
         "market_kama_mean", "market_adx_mean", "market_res_20_mean",
 
         # 流動性與動能 
-        'hist_return_20', 'hist_return_60',
+        'hist_return_20', 'hist_return_60', 'vol_surge',
+        'vol_surge_signed',
         
         # 籌碼0與1
         "trust_in",
@@ -278,7 +297,7 @@ def create_prediction(stock_filter=True, specified_date=None):
 
         # 位階
         "breakout_200",
-        'resistance_20', 'support_20',
+        'resistance_20', 'support_20', 
     ]
 
     print("正在執行特徵去極值處理...")

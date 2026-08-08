@@ -41,7 +41,7 @@ def create_cbm(version=None):
     # 1. 設定路徑
 
     cbm_version_dir = config.get_version_dir(config.STOCK_CBM_DIR, version)
-    data_path = config.STOCK_FEATURES_DIR / f"train_{version}.csv"
+    data_path = config.STOCK_TRAIN_FEATURES_DIR / f"train_{version}.csv"
     model_save_path = cbm_version_dir / "strategy.cbm"
     feature_save_path_json = cbm_version_dir / "feature_names.json"
 
@@ -54,21 +54,24 @@ def create_cbm(version=None):
 
     feature_cols = [
         # 趨勢強度
-        "kama", "adx",
+        "kama",'adx',
 
-        # 流動性與動能排名 
-        "amount_rank",
-        'rs_rank_20','rs_rank_60',
-        
+        # 大盤濾網
+        "market_kama_mean",'market_adx_mean',
+
+        # 動能排名與量能
+        'vol_surge_signed','hist_return_60',
+
         # 籌碼與法人動能
-        "trust_in",
+        #"trust_in",
 
         # 基本面
-        "yoy", "rev_bias_3",'rev_breakout_12',
+        "yoy", 
+        "rev_bias_3",'rev_breakout_12',
 
         # 位階
         "breakout_200",
-        'resistance_20', 'support_20',
+        'resistance_20',"support_20",
     ]
 
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
@@ -95,18 +98,12 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=8000,
+        iterations=6000,
         learning_rate=0.001,
         depth=6,
-        #early_stopping_rounds=4000,
-        #決定模型最小化損失目標
         loss_function='YetiRank',
-        #決定模型什麼時候停，搭配early stopping
         eval_metric='NDCG:top=5',
-
-        #印出數據
         custom_metric=['NDCG:top=5','PrecisionAt:top=5'],
-        #每多少輪印進度
         verbose=200,
         random_seed=42,
         thread_count=-1
@@ -130,4 +127,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v38')
+    create_cbm(version='v47')

@@ -1,21 +1,13 @@
 """
-Backtester V3 — 純 NAV 比率法 (Pure NAV Ratio Method)
-======================================================
-V3 修正項目（相對 V2）：
-  FIX1: VOL_THRESHOLD 由 0.99 修正為 0.30（原設定永遠不觸發）
-  FIX2: 對照組年化改用實際天數 / 365.25，不再用策略月份數近似
-  FIX3: 月底結算改用純 NAV 比率（end_total / capital），
-        移除中間變數 month_return 作為主要路徑，改為衍生統計用
-  FIX4: 個股 simulated_return 分母統一為 capital / n_stocks，
-        確保個股報酬平均可還原整體 NAV（可驗算一致性）
-  FIX5: 廢除獨立 nav_curve / equity_curve 陣列，
-        NAV 序列直接從 results_df['nav'] 建構，徹底消除長度漂移
+一、濾網
+1.成交值
+2.營收
 
-核心概念：純 NAV 比率連乘
-  - 每月 period_ratio = end_total / capital（期初資產）
-  - 累積 NAV = ∏ period_ratio（精確連乘，無近似誤差）
-  - capital 每月更新為 end_total（滾動複利）
-  - 現金池（停損/砍倉/再平衡回收）自動納入 end_total，不遺漏
+二、風控
+1.微觀個股停損
+2.宏觀帳戶停損
+3.宏觀帳戶停利
+4.入場白名單kama_mean控制部位
 """
 
 import matplotlib
@@ -26,8 +18,16 @@ import pandas as pd
 import numpy as np
 from catboost import CatBoostRanker
 import os
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import yfinance as yf
 import config
+from fund_stock.management.core.position_sizing import get_position_scale, get_market_regime, format_allocation_report
 
 
 # ── 中文字體自動設定（解決 CJK glyph 警告）──────────────
@@ -116,12 +116,12 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 # 主回測函式
 # ──────────────────────────────────────────────
 
-def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open=False, delay_days=0, silent=False, export=True):
+def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open=False, delay_days=0, silent=False, export=True, use_market_temper=True):
     if select_rank is None:
         select_rank = list(range(1, 6))
 
     MODEL_FILE   = config.get_version_dir(config.STOCK_CBM_DIR, version) / "strategy.cbm"
-    DATA_FILE    = config.STOCK_FEATURES_DIR / f"train_{version}.csv"
+    DATA_FILE    = config.STOCK_BT_FEATURES_DIR / f"bt_{version}.csv"
 
     INITIAL_CAPITAL  = 1_000_000
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
@@ -141,7 +141,18 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
+    if not DATA_FILE.exists():
+        if not silent:
+            print(f"\n找不到回測特徵檔(bt)，自動呼叫 bt.py 進行建置...\n")
+        from fund_stock.management.data.cleaning.bt import create_backtest_features
+        create_backtest_features(version=version, years_10=True, stock_filter=True)
+
     df = pd.read_csv(DATA_FILE, dtype={'id': str})
+
+    #去掉黑名單(電信股)
+    black_ids = ['2412', '3045', '4904']
+    df = df[~df['id'].isin(black_ids)].copy()
+
     df['date'] = pd.to_datetime(df['date'])
     cutoff_idx = int(len(df['date'].unique()) * 0.8)
     cutoff_date = sorted(df['date'].unique())[cutoff_idx]
@@ -195,15 +206,17 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
 
         n_stocks = len(top_picks)
 
-        # ── 月初：買進，扣入場手續費 ──────────────────
-        # 每檔分配等額資金；買進成本扣在分配資金內
-        alloc_per_stock = capital / n_stocks
-        buy_cost_total  = _calc_tx_cost(capital, TRANSACTION_COST)  # 全倉買入成本
-        # 扣除買入成本後才是實際投入各股的資金
-        net_alloc_per_stock = (capital - buy_cost_total) / n_stocks
+        # ── 月初：大盤溫度監控與資金配置買進 ──────────────────
+        mk_val = float(group['market_kama_mean'].iloc[0]) if 'market_kama_mean' in group.columns else 1.01
+        pos_scale = get_position_scale(mk_val) if use_market_temper else 1.00
+        invest_cap = capital * pos_scale
 
-        # 現金池：用來放停損/砍倉/再平衡回收的現金（月初 = 0，全倉投入）
-        cash_pool = 0.0
+        alloc_per_stock = invest_cap / n_stocks
+        buy_cost_total  = _calc_tx_cost(invest_cap, TRANSACTION_COST)  # 實際進場部位買入成本
+        net_alloc_per_stock = (invest_cap - buy_cost_total) / n_stocks
+
+        # 現金池：用來放停損/砍倉/再平衡回收的現金（初始值為大盤均溫 <= 1.0 時保留的防禦現金）
+        cash_pool = capital * (1.00 - pos_scale)
 
         portfolio = {}
 
@@ -245,6 +258,9 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
             virtual_day_stock_val = 0.0
             
             for idx, p in portfolio.items():
+                if d_idx < len(p['prices']) and today_date is None:
+                    today_date = p['dates'][d_idx]
+                    
                 if p['alive'] and d_idx < len(p['prices']):
                     cur_val = p['shares'] * p['prices'][d_idx]
                     # 強制獲利封頂
@@ -252,8 +268,6 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                     if cur_val > max_allowed:
                         cur_val = max_allowed
                     virtual_day_stock_val += cur_val
-                    if today_date is None:
-                        today_date = p['dates'][d_idx]
             
             if today_date is None:
                 continue
@@ -382,6 +396,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
             'period_ratio': period_ratio,   # 便於驗算：nav = ∏ period_ratio
             'nav'         : nav,
             'capital'     : capital,
+            'mk_val'      : mk_val,
         })
 
     # ──────────────────────────────────────────────
@@ -509,12 +524,16 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         print(f"日勝率:       {daily_winrate:>10.2f}%")
         print("-" * 80)
         print(f"Beta (benchmark): {beta:>10.2f}")
-        print(f"Alpha(年化):  {alpha*100:>10.2f}%")
+        print(f"Alpha(年化):      {alpha*100:>10.2f}%")
         print("-" * 80)
+        bull_months = (results_df['mk_val'] > 1.0).sum() if 'mk_val' in results_df.columns else 0
+        def_months  = (results_df['mk_val'] <= 1.0).sum() if 'mk_val' in results_df.columns else 0
         print(f"月數:              {total_months}")
-        print(f"{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
+        print(f"微觀{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
         print(f"宏觀停損觸發:      {macro_stop_count} 次")
-        print(f"宏觀減碼觸發:      {macro_trim_count} 次")
+        print(f"宏觀停利觸發:      {macro_trim_count} 次")
+        print(f"大盤多頭月數 (>1): {bull_months} 個月 (滿倉進場)")
+        print(f"大盤防衛月數(<=1): {def_months} 個月 (留1/4現金)")
         print("=" * 80)
 
 
@@ -528,7 +547,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     stats_df['ret_for_stat'] = stats_df['simulated_return'].fillna(stats_df['return_20d'])
 
     rank_stats = (
-        stats_df.groupby('rank')['ret_for_stat']
+        stats_df.dropna(subset=['ret_for_stat']).groupby('rank')['ret_for_stat']
         .agg(
             avg_return = lambda x: (x.mean() - TRANSACTION_COST) * 100,
             winrate    = lambda x: ((x - TRANSACTION_COST) > 0).mean() * 100,
@@ -543,8 +562,18 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         fig1, ax1 = plt.subplots(figsize=(14, 5))
         label_ai = (f'Rank {rank_str}  |  NAV {nav:.3f}  '
                     f'({total_return*100:.0f}%  /  Annual {annual_return*100:.1f}%)')
-        ax1.plot(results_df['date'], results_df['nav'],
+        ax1.plot(daily_df.index, daily_df['daily_nav'],
                  label=label_ai, color='crimson', linewidth=2)
+        
+        # 標註最新資料日期與 NAV
+        latest_date = daily_df.index[-1]
+        latest_nav = daily_df['daily_nav'].iloc[-1]
+        ax1.annotate(f"Latest: {latest_date.strftime('%Y-%m-%d')}\nNAV: {latest_nav:.2f}",
+                     xy=(latest_date, latest_nav),
+                     xytext=(-40, 20), textcoords='offset points',
+                     ha='right', va='bottom',
+                     bbox=dict(boxstyle='round,pad=0.3', fc='yellow', alpha=0.5),
+                     arrowprops=dict(arrowstyle='->', color='crimson', lw=1.5))
 
         if benchmark_nav is not None:
             label_b = (f'{benchmark}  |  NAV {benchmark_nav.iloc[-1]:.3f}  '
@@ -619,4 +648,4 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     return results_df, daily_df['daily_nav']
 
 if __name__ == "__main__":
-    backtester(version='v41', select_rank=list(range(1, 4)), benchmark='0050', entry_on_next_open=False)
+    backtester(version='v47', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)

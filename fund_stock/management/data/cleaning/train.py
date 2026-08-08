@@ -8,7 +8,7 @@ import gc
 import config
 
 def create_training(version='v39', years_10=True, stock_filter=True):
-    file_save_name = config.STOCK_FEATURES_DIR / f'train_{version}.csv'
+    file_save_name = config.STOCK_TRAIN_FEATURES_DIR / f'train_{version}.csv'
 
     # ---------------------------------------------------------
     # 1. 讀取資料與預處理
@@ -114,14 +114,15 @@ def create_training(version='v39', years_10=True, stock_filter=True):
 
         # ── 法人籌碼 ──────────────────────────────────────────
         trust_period = 10
-        # 1. 先建立一個「是否為 0」的陣列（1 代表是 0，0 代表不是 0）
         is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
         zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
-        # 判斷過去 10 天內為 0 的天數是否 >= 7
         trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
 
-        # 法人籌碼計算完成
-
+        # ── 波動與量能 ──────────────────────────────
+        vol_sma_20 = SMA(volume, timeperiod=20)
+        vol_surge = volume / (vol_sma_20 + 1e-9) 
+        vol_surge_signed = volume / (vol_sma_20 + 1e-9) * np.where((trust_net + foreign_net) > 0, 1.0, -1.0)
+        
         # ── 計算 20 日實際報酬 (預測標籤用) ──────────────────
         close_shifted = np.empty(len(close))
         close_shifted[:-20] = close[20:]
@@ -154,6 +155,8 @@ def create_training(version='v39', years_10=True, stock_filter=True):
             'trust_in'      : trust_in,
             'hist_return_20': hist_return_20,
             'hist_return_60': hist_return_60,
+            'vol_surge'     : vol_surge,
+            'vol_surge_signed' : vol_surge_signed,
             'return_20d'    : return_20d,
         }
         for col, arr in cols.items():
@@ -225,8 +228,7 @@ def create_training(version='v39', years_10=True, stock_filter=True):
     # 7. 去極值與標籤排名 (Labeling) 與 截面排名特徵
     # ---------------------------------------------------------
     print("進行特徵淨化 (Clipping)、截面排名生成與標籤生成...")
-    
-    # 在同一個截面(日期)下，將成交值轉為百分位數 (0~1區間的四分位距概念)
+
     final_df['amount_rank'] = final_df.groupby('date')['amount_20'].rank(pct=True)
     
     # 【短期聖杯】截面相對強度排名 (Cross-Sectional RS Rank 20)
@@ -248,7 +250,7 @@ def create_training(version='v39', years_10=True, stock_filter=True):
 
     # 截面排名標籤 (0~1)
     final_df['label'] = final_df.groupby('date')['return_20d'].rank(pct=True)
-
+    
     # ---------------------------------------------------------
     # 8. 儲存結果
     # ---------------------------------------------------------
@@ -257,4 +259,4 @@ def create_training(version='v39', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v41', years_10=True, stock_filter=True)
+    create_training(version='v47', years_10=True, stock_filter=True)

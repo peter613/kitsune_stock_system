@@ -2,8 +2,17 @@ import pandas as pd
 import numpy as np
 from catboost import CatBoostRanker
 import os
+import sys
+from pathlib import Path
+
+# 將專案根目錄加入 sys.path，避免 ModuleNotFoundError
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from datetime import datetime
 import config
+from fund_stock.management.core.position_sizing import format_allocation_report
 
 def search_stock(stock_name: str, version='v20') -> str:
     """
@@ -127,6 +136,9 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     target_df = target_df.fillna(0)
     
     print(f"資料日期: {latest_date.date()} | 篩選排名: {select_ranks}")
+    if 'market_kama_mean' in target_df.columns:
+        mk_val = float(target_df['market_kama_mean'].iloc[0])
+        print(f"\n{format_allocation_report(mk_val)}")
 
     # 3. 預測與排序
     if target_df.empty:
@@ -134,7 +146,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
     missing_cols = [c for c in feature_cols if c not in target_df.columns]
     if missing_cols:
-        error_msg = f"❌ 致命錯誤：目前的 pred.csv 缺少模型 ({version}) 所需的特徵：\n{missing_cols}\n\n💡 解決方案：請先執行 train.py 產生新特徵，再執行 create_cbm.py 重新訓練模型！"
+        error_msg = f"❌ 錯誤：目前的 pred.csv 缺少模型 ({version}) 所需的特徵：\n{missing_cols}\n\n請先執行 train.py 產生新特徵，再執行 create_cbm.py 重新訓練模型！"
         print(error_msg)
         return error_msg
     
