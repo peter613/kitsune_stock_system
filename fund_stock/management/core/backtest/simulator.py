@@ -133,17 +133,26 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     FIXED_STOP_LOSS  = 0.15    # 個股固定停損
     MACRO_STOP_LOSS   = 0.10  # 宏觀防守：總資產跌 10% 全清倉
 
-    MACRO_TAKE_PROFIT = 0.10   # 宏觀停利：總資產漲 10% 啟動減碼
-    TRIM_RATIO        = 0.25   # 減碼比例：達標時賣出 25% 持股
-
+    MACRO_TAKE_PROFIT = 0.10
+    TRIM_RATIO        = 0.25
     rank_str = ','.join(map(str, select_rank))
     if not silent:
         print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
+    market_file = config.MARKET_DATA_DIR / "market.parquet"
+    need_rebuild = False
+
     if not DATA_FILE.exists():
         if not silent:
-            print(f"\n找不到回測特徵檔(bt)，自動呼叫 bt.py 進行建置...\n")
+            print(f"\n找不到回測特徵檔(bt)，準備建置...\n")
+        need_rebuild = True
+    elif market_file.exists() and market_file.stat().st_mtime > DATA_FILE.stat().st_mtime:
+        if not silent:
+            print(f"\n偵測到 market.parquet 有新資料，準備重新建置特徵檔...\n")
+        need_rebuild = True
+
+    if need_rebuild:
         from fund_stock.management.data.cleaning.bt import create_backtest_features
         create_backtest_features(version=version, years_10=True, stock_filter=True)
 
@@ -249,6 +258,9 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
 
         portfolio_liquidated_this_month = False
         has_trimmed_this_month = False
+        peak_virtual_total = capital
+        peak_post_trim_total = 0.0
+        peak_post_trim_cash = 0.0
 
         # ── 日內監控迴圈 ───────────────────────────────
         for d_idx in range(20):
@@ -277,9 +289,14 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
             
             macro_liquidated_today = False
             
+            if virtual_day_total > peak_virtual_total:
+                peak_virtual_total = virtual_day_total
+                
+            current_drawdown = (virtual_day_total / peak_virtual_total) - 1.0
+            
             # 2. ==== 宏觀防守與減碼機制 (優先) ====
             if not portfolio_liquidated_this_month:
-                if current_return <= -MACRO_STOP_LOSS:
+                if current_drawdown <= -MACRO_STOP_LOSS:
                     # 宏觀停損全清倉
                     for idx, p in portfolio.items():
                         if p['alive'] and d_idx < len(p['prices']):
@@ -308,6 +325,8 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                             p['own_cash'] += net_proceeds
                             p['shares'] -= shares_to_sell
                     has_trimmed_this_month = True
+                    peak_post_trim_total = virtual_day_total
+                    peak_post_trim_cash = cash_pool
                     macro_trim_count += 1
             # ==========================================
             
@@ -532,8 +551,8 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         print(f"微觀{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
         print(f"宏觀停損觸發:      {macro_stop_count} 次")
         print(f"宏觀停利觸發:      {macro_trim_count} 次")
-        print(f"大盤多頭月數 (>1): {bull_months} 個月 (滿倉進場)")
-        print(f"大盤防衛月數(<=1): {def_months} 個月 (留1/4現金)")
+        print(f"大盤多頭月數 (>0.98): {bull_months} 個月 (滿倉進場)")
+        print(f"大盤防衛月數(<=0.98): {def_months} 個月 (留1/4現金)")
         print("=" * 80)
 
 
@@ -648,4 +667,5 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     return results_df, daily_df['daily_nav']
 
 if __name__ == "__main__":
+    import sys
     backtester(version='v47', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)

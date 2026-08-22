@@ -111,6 +111,7 @@ def create_prediction(stock_filter=True, specified_date=None):
         amount = group["amount"].values.astype(float)
         amount_ln = np.log1p(group['amount'].values.astype(float))
         trust_net = group['Trust_Net'].values.astype(float)
+        foreign_net = group['Foreign_Net'].values.astype(float)
 
         try:
             kama = close / (KAMA(close, timeperiod=30) + 1e-9)
@@ -243,15 +244,6 @@ def create_prediction(stock_filter=True, specified_date=None):
 
     
     print("處理截面特徵 (Cross-Sectional)...")
-    def zero_centered_rank(x):
-        res = pd.Series(0.0, index=x.index)
-        pos = x > 0
-        neg = x < 0
-        if pos.sum() > 0:
-            res[pos] = x[pos].rank(pct=True)
-        if neg.sum() > 0:
-            res[neg] = x[neg].rank(ascending=False, pct=True) * -1.0
-        return res
 
     final_predict_df["amount_rank"] = final_predict_df["amount_20"].rank(pct=True)
     final_predict_df["rs_rank_20"] = final_predict_df["hist_return_20"].rank(pct=True)
@@ -265,7 +257,7 @@ def create_prediction(stock_filter=True, specified_date=None):
     print("計算高流動性科技股專屬廣度 (Tech Market Breadth)...")
     final_predict_df['market_kama_mean'] = final_predict_df['kama'].mean()
     final_predict_df['market_adx_mean'] = final_predict_df['adx'].mean()
-    final_predict_df['market_res_20_mean'] = final_predict_df['resistance_20'].mean()
+    final_predict_df['market_resistance_mean'] = final_predict_df['resistance_20'].mean()
 
     AMOUNT_THRESHOLD = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
     REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
@@ -283,7 +275,7 @@ def create_prediction(stock_filter=True, specified_date=None):
         "kama", "adx",
 
         # 宏觀環境
-        "market_kama_mean", "market_adx_mean", "market_res_20_mean",
+        "market_kama_mean", "market_adx_mean", "market_resistance_mean",
 
         # 流動性與動能 
         'hist_return_20', 'hist_return_60', 'vol_surge',

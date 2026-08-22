@@ -104,6 +104,20 @@ def _calculate_nav(df_record, df_flows, df_price):
     if not dates:
         dates = sorted(df_record['date'].unique())
 
+    # 檢查是否有非交易日 (或尚未更新報價) 的紀錄
+    market_dates = set(dates)
+    invalid_dates = []
+    for d in df_record['date'].unique():
+        if d not in market_dates:
+            invalid_dates.append(f"journal.csv: {pd.to_datetime(d).strftime('%Y/%m/%d')}")
+    for d in df_flows['date'].unique():
+        if d not in market_dates:
+            invalid_dates.append(f"transaction.csv: {pd.to_datetime(d).strftime('%Y/%m/%d')}")
+
+    if invalid_dates:
+        invalid_str = ", ".join(invalid_dates)
+        raise ValueError(f"警告：偵測到非交易日(假日)的紀錄：{invalid_str}，請修正。")
+
     history = []
 
     for d in dates:
@@ -144,7 +158,7 @@ def _calculate_nav(df_record, df_flows, df_price):
             (df_flows['date'] != first_sub['date'])  # 跳過初始申購日
         ]
         for _, row in flows_today.iterrows():
-            if row['action'] == 'subscribe':
+            if row['action'] in ['subscribe', 'discount']:
                 amount       = row['price']
                 new_units    = amount / nav_per_unit
                 cash        += amount

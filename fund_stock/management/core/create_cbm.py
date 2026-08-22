@@ -57,7 +57,7 @@ def create_cbm(version=None):
         "kama",'adx',
 
         # 大盤濾網
-        "market_kama_mean",'market_adx_mean',
+        "market_kama_mean",'market_adx_mean','market_resistance_mean',
 
         # 動能排名與量能
         'vol_surge_signed','hist_return_60',
@@ -98,7 +98,7 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=6000,
+        iterations=7000,
         learning_rate=0.001,
         depth=6,
         loss_function='YetiRank',
@@ -127,4 +127,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v47')
+    create_cbm(version='v48')

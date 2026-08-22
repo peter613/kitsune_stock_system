@@ -22,9 +22,9 @@ dependencies = [
     "python-dotenv",
     "html5lib",
     "supabase",
-    "questionary"
+    "questionary",
 ]
 
 [tool.setuptools]
-packages = ["kitsune_quant", "kitsune_portfolio"]
+packages = ["fund_stock", "fund_etf", "market_data", "portfolio", "sandbox"]
 py-modules = ["config"]

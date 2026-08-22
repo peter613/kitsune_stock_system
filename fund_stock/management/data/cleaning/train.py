@@ -246,7 +246,7 @@ def create_training(version='v39', years_10=True, stock_filter=True):
     print("計算高流動性科技股專屬廣度 (Tech Market Breadth)...")
     final_df['market_kama_mean'] = final_df.groupby('date')['kama'].transform('mean')
     final_df['market_adx_mean'] = final_df.groupby('date')['adx'].transform('mean')
-    final_df['market_res_20_mean'] = final_df.groupby('date')['resistance_20'].transform('mean')
+    final_df['market_resistance_mean'] = final_df.groupby('date')['resistance_20'].transform('mean')
 
     # 截面排名標籤 (0~1)
     final_df['label'] = final_df.groupby('date')['return_20d'].rank(pct=True)
@@ -259,4 +259,4 @@ def create_training(version='v39', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_training(version='v47', years_10=True, stock_filter=True)
+    create_training(version='v48', years_10=True, stock_filter=True)

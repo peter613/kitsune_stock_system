@@ -9,6 +9,7 @@ build/
 dist/
 *.egg-info/
 catboost_info/
+sandbox/
 
 # 敏感設定 (等一下我們會把 API Key 移到這裡)
 .env

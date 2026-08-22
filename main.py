@@ -34,9 +34,6 @@ from fund_stock.management.core.create_cbm import create_cbm
 from fund_stock.administration.update_navpu import update_quant
 from fund_stock.macro_research.market_temper import analyze_market_temper
 
-# =================
-# 系統工具定義(指令)
-# =================
 def sync_database():
     print('\n\n[1.] 下載 ETF')
     update_etf()
@@ -94,9 +91,6 @@ def open_dashboard_port() -> str:
     subprocess.Popen(cmd, shell=True)
     return "儀表板已成功在背景啟動。"
 
-# =================
-# 系統工具定義(AI)
-# =================
 def train_model(version: str) -> str:
     """更新(CBM)模型。必須輸入版本號 (例如 v11)。"""
     print(f"準備訓練版本: {version}")
@@ -141,7 +135,7 @@ def get_available_versions():
     if not os.path.exists(config.STOCK_CBM_DIR): return []
     versions = [d for d in os.listdir(config.STOCK_CBM_DIR)
                 if os.path.isdir(config.STOCK_CBM_DIR / d) and d.startswith('v')]
-    return sorted(versions)[-3:]
+    return sorted(sorted(versions)[-3:],reverse=True) 
 
 def main():
     print('')
@@ -198,8 +192,8 @@ def main():
             action_quant = questionary.select(
                 "請選擇要執行的量化模組：\n",
                 choices=[
-                    "預測",
                     "科技市場溫度",
+                    "預測",
                     "回測",
                     "模型訓練",
                     "返回主選單"
@@ -236,12 +230,14 @@ def main():
             elif action_quant == "模型訓練":
                 # 模型訓練通常會建立新版本，因此保留輸入欄位
                 version = questionary.text(
-                (f"請輸入要訓練的模型版本號 (最新: {get_available_versions()[-1] if get_available_versions() else '無'}):"),
+                (f"請輸入要訓練的模型版本號 (最新: {get_available_versions()[0] if get_available_versions() else '無'}):"),
                 qmark="",
                 instruction=" ").ask()
-                if version:
+                if version.startswith('v'):
                     res = train_model(version)
                     print(f"{res}")
+                else:
+                    print("版本號格式錯誤，請以 'v' 開頭")
 
             elif action_quant == "科技市場溫度":
                 print("\n[科技市場溫度分析中...]")

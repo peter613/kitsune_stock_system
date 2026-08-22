@@ -1,4 +1,4 @@
-"""
+﻿"""
 pages.py
 Kitsune Kernel — 頁面渲染層
 職責：接收計算結果，負責所有 Streamlit / Plotly 渲染
@@ -472,22 +472,32 @@ def page_allocation(df_history, df_record, df_price):
     st.plotly_chart(fig, width='stretch')
 
 # ══════════════════════════════════════════
-# 頁面 6：資產結算中心
+# 頁面 6：持倉概況
 # ══════════════════════════════════════════
-def page_history(df_record, df_price, df_history):
-    st.title("資產結算中心")
+def page_unrealized(df_record, df_price, df_history):
+    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
+    macro_drawdown = 0.0
+    entry_date_str = ""
+    if not recent_buys.empty:
+        # 取最近一次買進的月份
+        latest_month = recent_buys['date'].max().to_period('M')
+        # 抓該月份的「第一筆買進日」作為本週期起點
+        entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
+        entry_date_str = entry_date.strftime('%m/%d')
+        
+        # 尋找進場日之後的最高淨值 (作為移動停利/停損的基準)
+        period_df = df_history[df_history['date'] >= entry_date]
+        if not period_df.empty:
+            peak_nav = period_df['total_nav'].max()
+            current_nav = df_history['total_nav'].iloc[-1]
+            macro_drawdown = (current_nav / peak_nav - 1.0) * 100
+    st.title("持倉概況")
     if df_record.empty:
         st.warning("無數據")
         return
 
     unrealized_data, realized_data, total_unrealized, total_realized = calculate_settlement_data(df_record, df_price)
 
-    column_config_setting = {
-        "代號": st.column_config.LinkColumn(
-            "代號",
-            display_text=r"quote/(\w+)"
-        )
-    }
 
     # ── 未實現 ──
     if unrealized_data:
@@ -496,18 +506,106 @@ def page_history(df_record, df_price, df_history):
         total_un_mv = df_un["當前市值"].sum()
         total_un_cost = total_un_mv - total_un_pnl
         total_un_roi = (total_un_pnl / total_un_cost * 100) if total_un_cost > 0 else 0
-        st.subheader(f"未實現損益 │ {total_un_roi:.2f}%")
         # 將字串轉為浮點數進行排序
         df_un["sort_roi"] = df_un["累積報酬率"].str.replace("%", "").astype(float)
         df_un = df_un.sort_values("sort_roi", ascending=False)
         # 基金經理人不看絕對金額，只保留報酬率
         df_un["標的"] = df_un["代號"].astype(str) + " " + df_un["名稱"]
         df_un_display = df_un[["標的", "股數", "累積報酬率"]]
-        st.dataframe(df_un_display, width='stretch', hide_index=True)
-    else:
-        st.subheader("未實現損益 │ 0.00%")
 
-    st.markdown("---")
+        col1, col2 = st.columns(2)
+        col1.metric("未實現損益",     f"{total_un_roi:.2f}%")
+        col2.metric(f"高點回撤 ({entry_date_str} 起)",    f"{min(0.0, macro_drawdown):.2f}%")
+
+        st.dataframe(df_un_display, width='stretch', hide_index=True)
+
+        """
+        st.markdown("---")
+        st.markdown("### 持倉個股走勢 (近20日)")
+        
+        @st.cache_data(show_spinner=False)
+        def load_local_market_data():
+            try:
+                df = pd.read_parquet('c:/Users/Lynn610/Documents/_kitsune_Stock_System/market_data/data/market.parquet')
+                df['date'] = pd.to_datetime(df['date'])
+                df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False)
+                return df
+            except Exception:
+                return pd.DataFrame()
+                
+        stock_list = df_un["標的"].tolist()
+        if stock_list:
+            selected_stock = st.selectbox("選擇持倉標的查看線圖", stock_list, label_visibility="collapsed")
+            selected_id = selected_stock.split(" ")[0]
+            
+            with st.spinner("載入本地報價資料 (首次載入較久)..."):
+                market_df = load_local_market_data()
+                
+            if not market_df.empty:
+                stock_data = market_df[market_df['id'] == selected_id].sort_values('date')
+                if len(stock_data) > 0:
+                    # 取最後 80 天計算 MA (讓前 20 天也能有 60 日線)
+                    stock_data = stock_data.tail(80).copy()
+                    stock_data['MA10'] = stock_data['close'].rolling(window=10).mean()
+                    stock_data['MA20'] = stock_data['close'].rolling(window=20).mean()
+                    stock_data['MA60'] = stock_data['close'].rolling(window=60).mean()
+                    
+                    # 顯示近 20 天
+                    display_data = stock_data.tail(20)
+                    
+                    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                                        vertical_spacing=0.08, row_heights=[0.5, 0.25, 0.25],
+                                        subplot_titles=("", "成交量", "法人買賣超"))
+                    
+                    # 1. K線
+                    fig.add_trace(go.Candlestick(x=display_data['date'],
+                                                 open=display_data['open'],
+                                                 high=display_data['high'],
+                                                 low=display_data['low'],
+                                                 close=display_data['close'],
+                                                 increasing_line_color='red', 
+                                                 decreasing_line_color='green',
+                                                 name="K線"), row=1, col=1)
+                    
+                    fig.add_trace(go.Scatter(x=display_data['date'], y=display_data['MA10'], line=dict(color='blue', width=1.0), name="MA10"), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=display_data['date'], y=display_data['MA20'], line=dict(color='orange', width=1.0), name="MA20"), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=display_data['date'], y=display_data['MA60'], line=dict(color='purple', width=1.0), name="MA60"), row=1, col=1)
+                    
+                    # 2. 成交量 (降低飽和度)
+                    vol_colors = ['rgba(255, 0, 0, 0.3)' if c >= o else 'rgba(0, 128, 0, 0.3)' for c, o in zip(display_data['close'], display_data['open'])]
+                    fig.add_trace(go.Bar(x=display_data['date'], y=display_data['volume'], marker_color=vol_colors, showlegend=False), row=2, col=1)
+                    
+                    # 3. 籌碼 (堆疊，外資下、投信上，降低飽和度)
+                    fig.add_trace(go.Bar(x=display_data['date'], y=display_data.get('Foreign_Net', 0), marker_color='rgba(255, 0, 0, 0.4)', name="外資", showlegend=False), row=3, col=1)
+                    fig.add_trace(go.Bar(x=display_data['date'], y=display_data.get('Trust_Net', 0), marker_color='rgba(0, 0, 255, 0.4)', name="投信", showlegend=False), row=3, col=1)
+                    
+                    # 隱藏下方時間滑桿，過濾週末空白
+                    dt_all = pd.date_range(start=display_data['date'].min(), end=display_data['date'].max())
+                    dt_obs = [d.strftime("%Y-%m-%d") for d in display_data['date']]
+                    dt_breaks = [d for d in dt_all.strftime("%Y-%m-%d").tolist() if not d in dt_obs]
+                    
+                    fig.update_layout(height=800, margin=dict(l=20, r=20, t=30, b=20),
+                                      barmode='relative',
+                                      xaxis_rangeslider_visible=False,
+                                      xaxis_rangebreaks=[dict(values=dt_breaks)],
+                                      showlegend=True,
+                                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                                      
+                    st.plotly_chart(fig, width='stretch')
+                else:
+                    st.warning("本地資料庫找不到此股票的歷史資料。")
+        """
+
+# ══════════════════════════════════════════
+# 頁面 7：週期獲利
+# ══════════════════════════════════════════
+def page_realized(df_record, df_price, df_history):
+    st.title("週期獲利")
+    if df_record.empty:
+        st.warning("無數據")
+        return
+        
+    _, realized_data, _, _ = calculate_settlement_data(df_record, df_price)
 
     # ── 已實現 ──
     if realized_data:
@@ -515,7 +613,34 @@ def page_history(df_record, df_price, df_history):
         total_re_pnl = df_re["已實現損益"].sum()
         total_re_cost = df_re["總成本"].sum()
         total_re_roi = (total_re_pnl / total_re_cost * 100) if total_re_cost > 0 else 0
-        st.subheader(f"已實現損益 │ {total_re_roi:.2f}% (平均單筆)")
+        
+        # ── 週期平均期望值 ──
+        cycle_avg_expected = 0.0
+        if "進場週期" in df_re.columns:
+            cycle_stats = df_re.groupby("進場週期").agg(
+                總已實現損益=("已實現損益", "sum"),
+                總成本=("總成本", "sum")
+            ).reset_index()
+            cycle_stats["週期報酬率"] = (cycle_stats["總已實現損益"] / cycle_stats["總成本"]) * 100
+            cycle_avg_expected = cycle_stats["週期報酬率"].mean()
+
+        # ── 年化報酬 (基於天數) ──
+        annual_return = 0.0
+        years = 0.0
+        if not df_history.empty:
+            first_day = df_history["date"].iloc[0]
+            last_day = df_history["date"].iloc[-1]
+            days = (last_day - first_day).days
+            if days > 0:
+                years = days / 365.0
+                roi_window = (df_history["nav_per_unit"].iloc[-1] / df_history["nav_per_unit"].iloc[0])
+                annual_return = (roi_window ** (1 / years) - 1) * 100
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("平均單筆報酬", f"{total_re_roi:.2f}%")
+        col2.metric("週期期望值", f"{cycle_avg_expected:.2f}%")
+        col3.metric(f"年化報酬 ({years:.2f}年)", f"{annual_return:.2f}%")
+        st.markdown("<hr>", unsafe_allow_html=True)
         
         # 建立週期報酬柱狀圖
         if "進場週期" in df_re.columns:
@@ -561,28 +686,70 @@ def page_history(df_record, df_price, df_history):
                     font_color="black"
                 )
             )
-            st.plotly_chart(fig_bar, width='stretch')
-            
-            # 準備 Top 10 排行榜
             df_re["sort_roi"] = df_re["累積報酬率"].str.replace("%", "").astype(float)
-            df_re_top10 = df_re.sort_values("sort_roi", ascending=False).head(10)
+            
+            view_mode = st.selectbox("圖表模式", ["獲利紀錄", "投組分配圖", "單筆交易分配圖"], label_visibility="collapsed")
+            
+            if view_mode == "獲利紀錄":
+                st.plotly_chart(fig_bar, width='stretch')
+            elif view_mode == "投組分配圖":
+                min_roi = np.floor(cycle_stats["週期報酬率"].min() / 5) * 5
+                max_roi = np.ceil(cycle_stats["週期報酬率"].max() / 5) * 5
+                if min_roi == max_roi: max_roi += 5
+                
+                fig_dist_port = go.Figure(data=[
+                    go.Histogram(
+                        x=cycle_stats["週期報酬率"],
+                        xbins=dict(start=min_roi, end=max_roi, size=5),
+                        marker=dict(color="#4F247E", line=dict(color="white", width=1)),
+                        texttemplate="%{y}",
+                    )
+                ])
+                fig_dist_port.update_layout(
+                    template="plotly_dark",
+                    yaxis_title="出現月數",
+                    xaxis_title="投組獲利區間",
+                    xaxis=dict(tick0=min_roi, dtick=5, ticksuffix="%"),
+                    margin=dict(t=40, l=10, r=10, b=10)
+                )
+                st.plotly_chart(fig_dist_port, width='stretch')
+            else:
+                min_roi = np.floor(df_re["sort_roi"].min() / 5) * 5
+                max_roi = np.ceil(df_re["sort_roi"].max() / 5) * 5
+                if min_roi == max_roi: max_roi += 5
+                
+                fig_dist = go.Figure(data=[
+                    go.Histogram(
+                        x=df_re["sort_roi"],
+                        xbins=dict(start=min_roi, end=max_roi, size=5),
+                        marker=dict(color="#4F247E", line=dict(color="white", width=1)),
+                        texttemplate="%{y}",
+                    )
+                ])
+                fig_dist.update_layout(
+                    template="plotly_dark",
+                    yaxis_title="交易次數",
+                    xaxis_title="獲利區間",
+                    xaxis=dict(tick0=min_roi, dtick=5, ticksuffix="%"),
+                    margin=dict(t=40, l=10, r=10, b=10)
+                )
+                st.plotly_chart(fig_dist, width='stretch')
+            
+            # 準備 Top 5 排行榜
+            df_re_top5 = df_re.sort_values("sort_roi", ascending=False).head(5)
             
             # 建立標的名稱
-            df_re_top10["標的"] = df_re_top10["代號"].astype(str) + " " + df_re_top10["名稱"]
+            df_re_top5["標的"] = df_re_top5["代號"].astype(str) + " " + df_re_top5["名稱"]
             # 只顯示關鍵欄位
-            df_re_display = df_re_top10[["進場週期", "標的", "累積報酬率"]]
+            df_re_display = df_re_top5[["進場週期", "標的", "累積報酬率"]]
         else:
             df_re["標的"] = df_re["代號"].astype(str) + " " + df_re["名稱"]
             df_re_display = df_re[["日期", "標的", "累積報酬率"]]
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("最佳個股報酬 (Top 10)")
+        st.subheader("最佳個股報酬 (Top 5)")
         st.dataframe(df_re_display, width='stretch', hide_index=True)
     else:
         st.subheader("已實現損益 │ 0.00%")
 
     st.markdown("---")
-
-# ══════════════════════════════════════════
-# 頁面 6：再平衡細項(待開發)
-# ══════════════════════════════════════════

@@ -18,7 +18,7 @@ def get_position_scale(mk_val):
     if mk_val is None:
         return 1.00
     val = float(mk_val)
-    if val > 1.00:
+    if val > 0.98:
         return 1.00
     elif val >= 0.90:
         return 0.75
@@ -31,15 +31,15 @@ def get_market_regime(mk_val):
     取得結構化大盤多空環境與進場配給資訊
     """
     mk_val = float(mk_val) if mk_val is not None else 1.01
-    is_bull = mk_val > 1.00
+    is_bull = mk_val > 0.98
 
-    if mk_val > 1.00:
+    if mk_val > 0.98:
         pos_scale = 1.00
-        regime_label = "> 1.00"
+        regime_label = "> 0.98"
         action_text = "100% 入場 (順風多頭)"
     elif mk_val >= 0.90:
         pos_scale = 0.75
-        regime_label = "0.90 ~ 1.00"
+        regime_label = "0.90 ~ 0.98"
         action_text = "75% 入場，保留 25% 現金水位 (常規修正)"
     else:
         pos_scale = 0.50

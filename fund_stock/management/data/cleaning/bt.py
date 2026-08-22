@@ -202,15 +202,6 @@ def create_backtest_features(version='v41', years_10=True, stock_filter=True):
     # ---------------------------------------------------------
     print("進行特徵淨化 (Clipping)、截面排名生成...")
     
-    def zero_centered_rank(x):
-        res = pd.Series(0.0, index=x.index)
-        pos = x > 0
-        neg = x < 0
-        if pos.sum() > 0:
-            res[pos] = x[pos].rank(pct=True)
-        if neg.sum() > 0:
-            res[neg] = x[neg].rank(ascending=False, pct=True) * -1.0
-        return res
 
     final_df['amount_rank'] = final_df.groupby('date')['amount_20'].rank(pct=True)
     final_df['rs_rank_20'] = final_df.groupby('date')['hist_return_20'].rank(pct=True)
@@ -227,7 +218,7 @@ def create_backtest_features(version='v41', years_10=True, stock_filter=True):
     print("計算高流動性科技股專屬廣度 (Tech Market Breadth)...")
     final_df['market_kama_mean'] = final_df.groupby('date')['kama'].transform('mean')
     final_df['market_adx_mean'] = final_df.groupby('date')['adx'].transform('mean')
-    final_df['market_res_20_mean'] = final_df.groupby('date')['resistance_20'].transform('mean')
+    final_df['market_resistance_mean'] = final_df.groupby('date')['resistance_20'].transform('mean')
 
     final_df['label'] = final_df.groupby('date')['return_20d'].rank(pct=True)
 
@@ -239,4 +230,4 @@ def create_backtest_features(version='v41', years_10=True, stock_filter=True):
     print(f"最新日期: {final_df['date'].max().date()} | 股票數: {final_df['id'].nunique()} | 樣本總數: {len(final_df)}")
 
 if __name__ == "__main__":
-    create_backtest_features(version='v47', years_10=True, stock_filter=True)
+    create_backtest_features(version='v48', years_10=True, stock_filter=True)

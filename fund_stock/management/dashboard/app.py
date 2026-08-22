@@ -20,7 +20,8 @@ from fund_stock.management.dashboard.pages import (
     page_fund_return,
     page_fund_quality,
     page_allocation,
-    page_history,
+    page_unrealized,
+    page_realized,
 )
 import config
 
@@ -177,7 +178,8 @@ _PAGES = {
     " 基金報酬": lambda h, r, p: page_fund_return(h),
     " 基金品質": lambda h, r, p: page_fund_quality(h),
     " 資產配置": lambda h, r, p: page_allocation(h, r, p),
-    " 交易紀錄": lambda h, r, p: page_history(r, p, r),
+    " 持倉概況": lambda h, r, p: page_unrealized(r, p, h),
+    " 週期獲利": lambda h, r, p: page_realized(r, p, h),
 }
 
 
