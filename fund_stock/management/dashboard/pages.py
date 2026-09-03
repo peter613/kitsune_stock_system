@@ -1,4 +1,4 @@
-﻿"""
+"""
 pages.py
 Kitsune Kernel — 頁面渲染層
 職責：接收計算結果，負責所有 Streamlit / Plotly 渲染
@@ -242,21 +242,23 @@ def page_fund_return(df_history):
     roi_window = ((1 + last['roi_total'])  / (1 + first['roi_total'])  - 1) * 100
     bm_0050    = ((1 + last['roi_0050'])   / (1 + first['roi_0050'])   - 1) * 100
     bm_00631L  = ((1 + last['roi_00631L']) / (1 + first['roi_00631L']) - 1) * 100
-    alpha_0050 = roi_window - bm_0050
-    alpha_631L = roi_window - bm_00631L
-
     daily_ret  = df_history['roi_total'].diff().dropna()
     ret_0050   = df_history['roi_0050'].diff().dropna()
     ret_00631L = df_history['roi_00631L'].diff().dropna()
 
     beta_0050  = calc_beta(daily_ret, ret_0050)
     beta_631L  = calc_beta(daily_ret, ret_00631L)
+
+    # 簡易 CAPM Alpha (不計無風險利率)
+    alpha_0050 = roi_window - (beta_0050 * bm_0050)
+    alpha_631L = roi_window - (beta_631L * bm_00631L)
+
     win_rate   = (daily_ret > 0).sum() / len(daily_ret) * 100
 
     col1, col2, col3 = st.columns(3)
     col1.metric("累積報酬",  f"{roi_window:.2f}%")
-    col2.metric("0050 報酬", f"{bm_0050:.2f}%",   help=f"超額報酬: {alpha_0050:+.2f}%")
-    col3.metric("正二 報酬", f"{bm_00631L:.2f}%", help=f"超額報酬: {alpha_631L:+.2f}%")
+    col2.metric("0050 報酬", f"{bm_0050:.2f}%",   help=f"Alpha (CAPM): {alpha_0050:+.2f}%")
+    col3.metric("正二 報酬", f"{bm_00631L:.2f}%", help=f"Alpha (CAPM): {alpha_631L:+.2f}%")
 
     configs = [
         {"col": "roi_total",  "name": "投資組合",      "color": "#4F247E", "width": 3.5, "visible": True,         "dash": "solid"},
@@ -511,7 +513,7 @@ def page_unrealized(df_record, df_price, df_history):
         df_un = df_un.sort_values("sort_roi", ascending=False)
         # 基金經理人不看絕對金額，只保留報酬率
         df_un["標的"] = df_un["代號"].astype(str) + " " + df_un["名稱"]
-        df_un_display = df_un[["標的", "股數", "累積報酬率"]]
+        df_un_display = df_un[["標的", "股數", "累積報酬率", "高點回撤"]]
 
         col1, col2 = st.columns(2)
         col1.metric("未實現損益",     f"{total_un_roi:.2f}%")
@@ -519,7 +521,7 @@ def page_unrealized(df_record, df_price, df_history):
 
         st.dataframe(df_un_display, width='stretch', hide_index=True)
 
-        """
+        #這裡是k線，不要可以註解
         st.markdown("---")
         st.markdown("### 持倉個股走勢 (近20日)")
         
@@ -594,7 +596,7 @@ def page_unrealized(df_record, df_price, df_history):
                     st.plotly_chart(fig, width='stretch')
                 else:
                     st.warning("本地資料庫找不到此股票的歷史資料。")
-        """
+        
 
 # ══════════════════════════════════════════
 # 頁面 7：週期獲利

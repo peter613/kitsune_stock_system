@@ -106,12 +106,14 @@ def _calculate_nav(df_record, df_flows, df_price):
 
     # 檢查是否有非交易日 (或尚未更新報價) 的紀錄
     market_dates = set(dates)
+    current_date = pd.Timestamp.now().normalize()
     invalid_dates = []
+    
     for d in df_record['date'].unique():
-        if d not in market_dates:
+        if d <= current_date and d not in market_dates:
             invalid_dates.append(f"journal.csv: {pd.to_datetime(d).strftime('%Y/%m/%d')}")
     for d in df_flows['date'].unique():
-        if d not in market_dates:
+        if d <= current_date and d not in market_dates:
             invalid_dates.append(f"transaction.csv: {pd.to_datetime(d).strftime('%Y/%m/%d')}")
 
     if invalid_dates:

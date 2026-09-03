@@ -140,10 +140,13 @@ def calculate_settlement_data(df_record, df_price):
         total_sell_cost = 0.0
         last_sell_date  = None
         last_buy_date   = None
+        cycle_start_date = None
 
         for _, row in sub.iterrows():
             trade_val = row['price'] * row['share']
             if row['action'] == 'buy':
+                if cum_shares <= 0.0001:
+                    cycle_start_date = row['date']
                 fee         = int(trade_val * 0.001425)
                 cum_shares += row['share']
                 total_cost += trade_val + fee
@@ -182,6 +185,7 @@ def calculate_settlement_data(df_record, df_price):
                     total_revenue   = 0.0
                     total_sell_cost = 0.0
                     last_sell_date  = None
+                    cycle_start_date = None
 
         # 迴圈結束後，如果還有未清空的已賣出紀錄 (異常防呆)
         if total_sell_cost > 0 and last_sell_date is not None and cum_shares > 0.0001:
@@ -204,11 +208,23 @@ def calculate_settlement_data(df_record, df_price):
             mv           = cum_shares * px
             est_sell_fee = int(mv * 0.001425) + int(mv * tax_rate)
             u_pnl        = mv - total_cost - est_sell_fee
+
+            # 計算進場後的最高收盤價與高點回撤 (最少 0.00%)
+            start_date = cycle_start_date if cycle_start_date is not None else last_buy_date
+            dd_pct = 0.0
+            if start_date is not None and not df_price.empty:
+                stock_hist = df_price[(df_price['id'] == aid) & (df_price['date'] >= start_date)]
+                if not stock_hist.empty:
+                    peak_px = max(stock_hist['close'].max(), px)
+                    if peak_px > 0 and px > 0:
+                        dd_pct = min(0.0, (px / peak_px - 1.0) * 100)
+
             unrealized_data.append({
                 "代號":       aid,#若未來要超連結改成:yahoo_url,
                 "名稱":       stock_name,
                 "股數":       int(cum_shares),
                 "累積報酬率": f"{(u_pnl / total_cost) * 100:.1f}%" if total_cost > 0 else "0%",
+                "高點回撤":   f"{dd_pct:.2f}%",
                 "未實現損益": round(u_pnl, 0),
                 "當前市值":   round(mv, 0),
             })
@@ -263,10 +279,11 @@ def _check_rebalance_alerts(df_record, df_price):
 def _check_stoploss_alerts(unrealized_data, threshold=-20.0):
     alerts = []
     for item in unrealized_data:
+        dd_float = float(item.get("高點回撤", "0%").replace("%", ""))
         roi_float = float(item["累積報酬率"].replace("%", ""))
-        if roi_float <= threshold:
+        if dd_float <= threshold or roi_float <= threshold:
             alerts.append(
-                f"【指令 : 滅止 】{item['代號']} {item['名稱']} 已觸發 -20% 停損保險機制"
+                f"【指令 : 滅止 】{item['代號']} {item['名稱']} 高點回撤已達 {dd_float:.1f}%，觸發 20% 移動停損保險機制"
             )
     return alerts
 

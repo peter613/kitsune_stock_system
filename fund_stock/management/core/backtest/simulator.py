@@ -4,9 +4,9 @@
 2.營收
 
 二、風控
-1.微觀個股停損
-2.宏觀帳戶停損
-3.宏觀帳戶停利
+1.微觀個股移動停損
+2.宏觀帳戶移動停損
+3.宏觀帳戶%數停利
 4.入場白名單kama_mean控制部位
 """
 
@@ -127,17 +127,20 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     TRANSACTION_COST = 0.005   # 0.5% per trade（買進 + 賣出各算一次）
     SINGLE_TRADE_CAP = 0.80    # 單筆最高獲利封頂 (80%)
 
-    AMOUNT_THRESHOLD  = 100000 # 當天成交值 > 1.0億 (設為0則不過濾)
-    REVENUE_THRESHOLD = 100000 # 當月營收 > 1.0億 (設為0則不過濾)
+    # ── 一、濾網 (Filters) ──────────────────────────────
+    AMOUNT_THRESHOLD  = 100000 # 1. 當天成交值 > 1.0億 (設為0則不過濾)
+    REVENUE_THRESHOLD = 100000 # 2. 當月營收 > 1.0億 (設為0則不過濾)
 
-    FIXED_STOP_LOSS  = 0.15    # 個股固定停損
-    MACRO_STOP_LOSS   = 0.10  # 宏觀防守：總資產跌 10% 全清倉
+    # ── 二、風控 (Risk Management - 奧坎剃刀架構) ────────
+    STOCK_TRAILING_STOP = 0.20 # 1. 微觀個股高點移動停損 (回撤 20% 觸發，最慘為進場跌 20%)
+    MACRO_STOP_LOSS     = 0.10 # 2. 宏觀帳戶高點移動停損 (總資產自高點跌 10% 全清倉)
+    MACRO_TAKE_PROFIT   = 0.10 # 3. 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋變現)
+    TRIM_RATIO          = 0.25 #    停利減碼比例 (25%)
+    # 4. 入場白名單 kama_mean 控制部位由 use_market_temper 參數控制 (0.75 / 0.50 / 1.00)
 
-    MACRO_TAKE_PROFIT = 0.10
-    TRIM_RATIO        = 0.25
     rank_str = ','.join(map(str, select_rank))
     if not silent:
-        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark}")
+        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark} | 溫度調控: {use_market_temper}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
     market_file = config.MARKET_DATA_DIR / "market.parquet"
@@ -249,6 +252,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                         # 追蹤該股自己回收的現金（停損/砍倉/再平衡），
                         # 用於計算個股 simulated_return
                         'own_cash': 0.0,
+                        'peak_p'  : entry_p,  # 追蹤個股進場後最高收盤價
                     }
             except KeyError:
                 cash_pool += net_alloc_per_stock
@@ -259,8 +263,6 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         portfolio_liquidated_this_month = False
         has_trimmed_this_month = False
         peak_virtual_total = capital
-        peak_post_trim_total = 0.0
-        peak_post_trim_cash = 0.0
 
         # ── 日內監控迴圈 ───────────────────────────────
         for d_idx in range(20):
@@ -325,12 +327,10 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                             p['own_cash'] += net_proceeds
                             p['shares'] -= shares_to_sell
                     has_trimmed_this_month = True
-                    peak_post_trim_total = virtual_day_total
-                    peak_post_trim_cash = cash_pool
                     macro_trim_count += 1
             # ==========================================
             
-            # 3. 【日檢查】個股停損 (若宏觀未清倉)
+            # 3. 【日檢查】個股高點移動停利/停損 (若宏觀未清倉)
             if not macro_liquidated_today and not portfolio_liquidated_this_month:
                 for idx, p in portfolio.items():
                     if p['alive'] and d_idx < len(p['prices']):
@@ -338,7 +338,9 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                         if entry_on_next_open and d_idx == 0:
                             continue
                         cur_p = p['prices'][d_idx]
-                        if cur_p <= p['entry_p'] * (1 - FIXED_STOP_LOSS):
+                        if cur_p > p['peak_p']:
+                            p['peak_p'] = cur_p
+                        if cur_p <= p['peak_p'] * (1 - STOCK_TRAILING_STOP):
                             sell_val      = p['shares'] * cur_p
                             fee           = _calc_tx_cost(sell_val, TRANSACTION_COST)
                             net_proceeds  = sell_val - fee
@@ -548,7 +550,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         bull_months = (results_df['mk_val'] > 1.0).sum() if 'mk_val' in results_df.columns else 0
         def_months  = (results_df['mk_val'] <= 1.0).sum() if 'mk_val' in results_df.columns else 0
         print(f"月數:              {total_months}")
-        print(f"微觀{FIXED_STOP_LOSS*100:.0f}%停損次數:       {stop_loss_count} 次")
+        print(f"微觀{STOCK_TRAILING_STOP*100:.0f}%高點移動停損次數:  {stop_loss_count} 次")
         print(f"宏觀停損觸發:      {macro_stop_count} 次")
         print(f"宏觀停利觸發:      {macro_trim_count} 次")
         print(f"大盤多頭月數 (>0.98): {bull_months} 個月 (滿倉進場)")
