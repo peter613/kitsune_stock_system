@@ -137,10 +137,10 @@ def create_prediction(stock_filter=True, specified_date=None):
         support_20 = close / (box_sup_20 + 1e-9)
 
         # ── 法人籌碼 ──────────────────────────────────────────
-        trust_period = 10
-        is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
-        zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
-        trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
+        # trust_period = 10
+        # is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
+        # zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
+        # trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
 
         # ── 波動與量能 ──────────────────────────────
         vol_sma_20 = SMA(volume, timeperiod=20)
@@ -166,7 +166,7 @@ def create_prediction(stock_filter=True, specified_date=None):
             'breakout_200'  : breakout_200,
             'resistance_20' : resistance_20,
             'support_20'    : support_20,
-            'trust_in'      : trust_in,
+            #'trust_in'      : trust_in,
             'hist_return_20': hist_return_20,
             'hist_return_60': hist_return_60,
             'vol_surge'     : vol_surge,
@@ -301,4 +301,4 @@ def create_prediction(stock_filter=True, specified_date=None):
     print(f"預測資料已生成: {file_save_name}\n成功保留 {len(final_output)} 檔標的。")
 
 if __name__ == "__main__":
-    create_prediction(specified_date='20260713')
+    create_prediction(specified_date='20260910')

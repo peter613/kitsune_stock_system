@@ -47,6 +47,8 @@ def load_data():
     df_flows = df_flows[df_flows['date'] >= START_DATE].copy()
     df_flows['price'] = pd.to_numeric(df_flows['price'], errors='coerce').fillna(0)
     df_flows['share'] = pd.to_numeric(df_flows['share'], errors='coerce').fillna(0)
+    if 'subscriber' in df_flows.columns:
+        df_flows['subscriber'] = df_flows['subscriber'].astype(str).str.strip()
 
     def _standardize(df):
         df.columns = df.columns.str.strip().str.lower()
@@ -209,21 +211,32 @@ def calculate_settlement_data(df_record, df_price):
             est_sell_fee = int(mv * 0.001425) + int(mv * tax_rate)
             u_pnl        = mv - total_cost - est_sell_fee
 
-            # 計算進場後的最高收盤價與高點回撤 (最少 0.00%)
+            # 計算進場後的最高收盤價與高點回撤 (以進場成本為基準起點，最少 0.00%)
+            cost_px = total_cost / cum_shares if cum_shares > 0 else px
+            peak_px = cost_px
             start_date = cycle_start_date if cycle_start_date is not None else last_buy_date
-            dd_pct = 0.0
             if start_date is not None and not df_price.empty:
                 stock_hist = df_price[(df_price['id'] == aid) & (df_price['date'] >= start_date)]
                 if not stock_hist.empty:
-                    peak_px = max(stock_hist['close'].max(), px)
-                    if peak_px > 0 and px > 0:
-                        dd_pct = min(0.0, (px / peak_px - 1.0) * 100)
+                    hist_max = stock_hist['close'].max()
+                    if pd.notnull(hist_max) and hist_max > peak_px:
+                        peak_px = hist_max
+            if px > peak_px:
+                peak_px = px
+
+            roi_pct = (u_pnl / total_cost) * 100 if total_cost > 0 else 0.0
+            if peak_px <= cost_px * 1.0001:
+                # 從未突破成本：高點回撤即為當前虧損幅度
+                dd_pct = min(0.0, roi_pct)
+            else:
+                # 曾突破成本創高：計算自歷史最高價回撤幅度
+                dd_pct = min(0.0, (px / peak_px - 1.0) * 100) if peak_px > 0 else 0.0
 
             unrealized_data.append({
                 "代號":       aid,#若未來要超連結改成:yahoo_url,
                 "名稱":       stock_name,
                 "股數":       int(cum_shares),
-                "累積報酬率": f"{(u_pnl / total_cost) * 100:.1f}%" if total_cost > 0 else "0%",
+                "累積報酬率": f"{roi_pct:.1f}%",
                 "高點回撤":   f"{dd_pct:.2f}%",
                 "未實現損益": round(u_pnl, 0),
                 "當前市值":   round(mv, 0),
@@ -369,3 +382,55 @@ def calculate_quality_comparison(df_history):
         _calc_row(df_history['roi_00631L'], "正二(00631L)", ret_0050),
     ]
     return pd.DataFrame(rows)
+
+
+# ──────────────────────────────────────────
+# 模組 5：投資人認購與持股比例分析
+# ──────────────────────────────────────────
+@st.cache_data
+def calculate_subscriber_holding_ratio(df_flows=None) -> pd.DataFrame:
+    """
+    計算各投資人持股單位數與認購持股比例。
+    回傳欄位：subscriber, share, ratio (float, %), ratio_str (str, 例如 78.9%)
+    由持股比例高到低排序。
+    """
+    if df_flows is None:
+        _, df_flows, _, _, _ = load_data()
+
+    if df_flows.empty or 'subscriber' not in df_flows.columns:
+        return pd.DataFrame(columns=['subscriber', 'share', 'ratio', 'ratio_str'])
+
+    subscriber_shares = {}
+    for _, row in df_flows.iterrows():
+        sub = str(row.get('subscriber', '')).strip()
+        if not sub or sub.lower() in ('nan', 'none', ''):
+            continue
+        if sub not in subscriber_shares:
+            subscriber_shares[sub] = 0.0
+
+        action = str(row.get('action', '')).strip().lower()
+        share = float(row.get('share', 0.0))
+        if action in ['subscribe', 'fee_in', 'discount']:
+            subscriber_shares[sub] += share
+        elif action in ['redeem', 'fee_out']:
+            subscriber_shares[sub] -= share
+
+    total_shares = sum(s for s in subscriber_shares.values() if s > 0)
+    if total_shares <= 0:
+        return pd.DataFrame(columns=['subscriber', 'share', 'ratio', 'ratio_str'])
+
+    results = []
+    for sub, shares in subscriber_shares.items():
+        if shares > 0:
+            ratio = (shares / total_shares) * 100
+            results.append({
+                'subscriber': sub,
+                'share': round(shares, 4),
+                'ratio': round(ratio, 2),
+                'ratio_str': f"{ratio:.1f}%"
+            })
+
+    df_res = pd.DataFrame(results)
+    if not df_res.empty:
+        df_res = df_res.sort_values('ratio', ascending=False).reset_index(drop=True)
+    return df_res

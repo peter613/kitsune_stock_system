@@ -16,6 +16,7 @@ from fund_stock.management.dashboard.engine import (
     calc_beta,
     calc_dd_series,
     calculate_quality_comparison,
+    calculate_subscriber_holding_ratio,
 )
 
 # ══════════════════════════════════════════
@@ -127,6 +128,91 @@ def page_fund_overview(df_history):
     fig1.update_yaxes(title_text="規模 (TWD)", secondary_y=False)
     fig1.update_yaxes(title_text="單位數",     secondary_y=True, showgrid=False)
     st.plotly_chart(fig1, width='stretch')
+
+    # ── 持股比例長條圖 ──
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.subheader("持股比例圖")
+    render_holding_ratio_chart()
+
+
+def render_holding_ratio_chart(df_flows=None):
+    """
+    渲染投資人持股比例長條圖：
+    - x 軸為 %（如 90.5%）
+    - y 軸為人名
+    - 由比例高到低，上往下排序
+    - 顏色統一用深藍色 (#1A2B4C)
+    - 姓名左側常駐高對比顯示 + 長條外側雙重標記
+    """
+    df_holding = calculate_subscriber_holding_ratio(df_flows)
+    if df_holding.empty:
+        st.info("尚無認購持股數據。")
+        return
+
+    # 升序排列傳給 Plotly 水平長條圖：最大值排在最上方
+    df_plot = df_holding.sort_values('ratio', ascending=True).reset_index(drop=True)
+
+    names = df_plot['subscriber'].tolist()
+    ratios = df_plot['ratio'].tolist()
+    shares = df_plot['share'].tolist()
+
+    max_ratio = max(ratios) if ratios else 0.0
+    x_max = max(100.0, float(max_ratio) * 1.25)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=ratios,
+        y=names,
+        orientation='h',
+        marker=dict(
+            color='#1A2B4C',
+            line=dict(color='#1A2B4C', width=1)
+        ),
+        # 長條外側直接常駐顯示【姓名 + 百分比】，一目瞭然
+        text=[f"  <b>{name}</b>  {r:.1f}%" for name, r in zip(names, ratios)],
+        textposition='outside',
+        textfont=dict(size=14, color='#1A2B4C'),
+        cliponaxis=False,
+        customdata=shares,
+        hovertemplate='<b>%{y}</b><br>持股比例: %{x:.2f}%<br>持有單位: %{customdata:,.2f} UNITS<extra></extra>',
+    ))
+
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=max(200, len(df_plot) * 55 + 70),
+        margin=dict(t=20, l=20, r=90, b=20),
+        xaxis=dict(
+            title_text="持股比例 (%)",
+            ticksuffix="%",
+            range=[0, x_max],
+            showgrid=True,
+            gridcolor="rgba(200,200,200,0.35)",
+            tickfont=dict(size=13, color="#333333"),
+        ),
+        yaxis=dict(
+            type="category",
+            showticklabels=False,  # 隱藏左側姓名標籤（長條右側已有資訊）
+            showline=False,
+            showgrid=False,
+            zeroline=False,
+        ),
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor="#1A2B4C",
+            font_size=14,
+            font_color="black"
+        ),
+        showlegend=False
+    )
+    st.plotly_chart(fig, width='stretch')
+
+    # # 認購持股明細表（輔助速查）
+    # df_table = df_holding[['subscriber', 'share', 'ratio_str']].copy()
+    # df_table.columns = ['投資人', '持有單位數 (UNITS)', '持股比例']
+    # df_table['持有單位數 (UNITS)'] = df_table['持有單位數 (UNITS)'].map('{:,.2f}'.format)
+    # st.dataframe(df_table, width='stretch', hide_index=True)
 
 # ══════════════════════════════════════════
 # 頁面 2：淨值走勢
@@ -690,50 +776,102 @@ def page_realized(df_record, df_price, df_history):
             )
             df_re["sort_roi"] = df_re["累積報酬率"].str.replace("%", "").astype(float)
             
-            view_mode = st.selectbox("圖表模式", ["獲利紀錄", "投組分配圖", "單筆交易分配圖"], label_visibility="collapsed")
+            view_mode = st.selectbox("圖表模式", ["獲利紀錄", "投組直方圖", "單筆交易直方圖"], label_visibility="collapsed")
             
             if view_mode == "獲利紀錄":
                 st.plotly_chart(fig_bar, width='stretch')
-            elif view_mode == "投組分配圖":
-                min_roi = np.floor(cycle_stats["週期報酬率"].min() / 5) * 5
-                max_roi = np.ceil(cycle_stats["週期報酬率"].max() / 5) * 5
+            elif view_mode == "投組直方圖":
+                port_data = cycle_stats["週期報酬率"].dropna()
+                min_roi = np.floor(port_data.min() / 5) * 5
+                max_roi = np.ceil(port_data.max() / 5) * 5
                 if min_roi == max_roi: max_roi += 5
                 
-                fig_dist_port = go.Figure(data=[
-                    go.Histogram(
-                        x=cycle_stats["週期報酬率"],
-                        xbins=dict(start=min_roi, end=max_roi, size=5),
-                        marker=dict(color="#4F247E", line=dict(color="white", width=1)),
-                        texttemplate="%{y}",
-                    )
-                ])
+                fig_dist_port = go.Figure()
+                fig_dist_port.add_trace(go.Histogram(
+                    x=port_data,
+                    xbins=dict(start=min_roi, end=max_roi, size=5),
+                    marker=dict(color="#4F247E", line=dict(color="white", width=3.5)),
+                    texttemplate="%{y}",
+                    name="出現月數",
+                ))
+
+                # KDE 曲線 (投組直方圖)
+                if len(port_data) > 1 and port_data.std() > 0:
+                    from scipy.stats import gaussian_kde
+                    kde_port = gaussian_kde(port_data)
+                    x_norm_port = np.linspace(min_roi, max_roi, 200)
+                    bin_width = 5.0
+                    y_norm_port = len(port_data) * bin_width * kde_port(x_norm_port)
+                    fig_dist_port.add_trace(go.Scatter(
+                        x=x_norm_port,
+                        y=y_norm_port,
+                        mode='lines',
+                        name='KDE 分布',
+                        line=dict(color="red", width=3, shape='spline', dash="dot"),
+                        hoverinfo='skip'
+                    ))
+
+                # # 加上 0% 紅色虛線
+                # fig_dist_port.add_vline(
+                #     x=0,
+                #     line_color="red",
+                #     line_width=2.0
+                # )
                 fig_dist_port.update_layout(
                     template="plotly_dark",
                     yaxis_title="出現月數",
                     xaxis_title="投組獲利區間",
                     xaxis=dict(tick0=min_roi, dtick=5, ticksuffix="%"),
-                    margin=dict(t=40, l=10, r=10, b=10)
+                    margin=dict(t=40, l=10, r=10, b=10),
+                    showlegend=False
                 )
                 st.plotly_chart(fig_dist_port, width='stretch')
             else:
-                min_roi = np.floor(df_re["sort_roi"].min() / 5) * 5
-                max_roi = np.ceil(df_re["sort_roi"].max() / 5) * 5
+                roi_data = df_re["sort_roi"].dropna()
+                min_roi = np.floor(roi_data.min() / 5) * 5
+                max_roi = np.ceil(roi_data.max() / 5) * 5
                 if min_roi == max_roi: max_roi += 5
                 
-                fig_dist = go.Figure(data=[
-                    go.Histogram(
-                        x=df_re["sort_roi"],
-                        xbins=dict(start=min_roi, end=max_roi, size=5),
-                        marker=dict(color="#4F247E", line=dict(color="white", width=1)),
-                        texttemplate="%{y}",
-                    )
-                ])
+                fig_dist = go.Figure()
+
+                # 直方圖（使用 #C0392B，白色間距加寬）
+                fig_dist.add_trace(go.Histogram(
+                    x=roi_data,
+                    xbins=dict(start=min_roi, end=max_roi, size=5),
+                    marker=dict(color="#4F247E", line=dict(color="white", width=3.5)),
+                    texttemplate="%{y}",
+                    name="交易次數",
+                ))
+
+                # KDE 曲線 (單筆交易直方圖)
+                if len(roi_data) > 1 and roi_data.std() > 0:
+                    from scipy.stats import gaussian_kde
+                    kde = gaussian_kde(roi_data)
+                    x_norm = np.linspace(min_roi, max_roi, 200)
+                    bin_width = 5.0
+                    y_norm = len(roi_data) * bin_width * kde(x_norm)
+                    fig_dist.add_trace(go.Scatter(
+                        x=x_norm,
+                        y=y_norm,
+                        mode='lines',
+                        name='KDE 分布',
+                        line=dict(color="red", width=3, shape='spline', dash="dot"),
+                        hoverinfo='skip'
+                    ))
+
+                # # 加上 0% 紅色虛線
+                # fig_dist.add_vline(
+                #     x=0,
+                #     line_color="red",
+                #     line_width=2.0
+                # )
                 fig_dist.update_layout(
                     template="plotly_dark",
                     yaxis_title="交易次數",
                     xaxis_title="獲利區間",
                     xaxis=dict(tick0=min_roi, dtick=5, ticksuffix="%"),
-                    margin=dict(t=40, l=10, r=10, b=10)
+                    margin=dict(t=40, l=10, r=10, b=10),
+                    showlegend=False
                 )
                 st.plotly_chart(fig_dist, width='stretch')
             

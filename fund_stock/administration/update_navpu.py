@@ -19,8 +19,13 @@ START_DATE = '2026-03-10'   # 申購日，確保第一天 NAV = BASE_NAV
 BASE_NAV   = 10.0
 
 import os
+import sys
+from pathlib import Path
 import pandas as pd
 from datetime import datetime
+
+# Ensure project root is in sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import config
 
 

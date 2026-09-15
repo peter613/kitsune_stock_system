@@ -192,10 +192,10 @@ def main():
             action_quant = questionary.select(
                 "請選擇要執行的量化模組：\n",
                 choices=[
-                    "科技市場溫度",
                     "預測",
                     "回測",
                     "模型訓練",
+                    "科技市場溫度",
                     "返回主選單"
                 ],
                 qmark="",
@@ -216,21 +216,13 @@ def main():
                         run_prediction(version)
 
                     elif action_quant == "回測":
-                        benchmark = questionary.select(
-                            "請選擇 Benchmark：",
-                            choices=["0050", "00631L"],
-                        qmark="",
-                        instruction=" "
-                        ).ask()
-                        
-                        if benchmark:
-                            res = run_backtest(version, benchmark=benchmark)
-                            print(f"{res}")
+                        res = run_backtest(version)
+                        print(f"{res}")
 
             elif action_quant == "模型訓練":
                 # 模型訓練通常會建立新版本，因此保留輸入欄位
                 version = questionary.text(
-                (f"請輸入要訓練的模型版本號 (最新: {get_available_versions()[0] if get_available_versions() else '無'}):"),
+                (f"請輸入要訓練的模型版本號以v開頭 (最新: {get_available_versions()[0] if get_available_versions() else '無'}):"),
                 qmark="",
                 instruction=" ").ask()
                 if version.startswith('v'):

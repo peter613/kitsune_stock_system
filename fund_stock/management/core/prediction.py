@@ -155,19 +155,21 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     target_df = target_df.sort_values('predict_score', ascending=False).reset_index(drop=True)
     target_df['rank'] = range(1, len(target_df) + 1)
 
-    #--- 核心邏輯修改：改為回傳字串而不是單純 print ---
-    def get_feature_analysis_string(all_df, ranks_to_show, features_to_analyze) -> str:
+    #--- 特徵分析：只針對前幾名記錄入選原因 ---
+    def get_feature_analysis(all_df, ranks_to_show, features_to_analyze) -> pd.DataFrame:
         analysis_df = all_df.copy()
         valid_features = []
         
-        # 計算百分位
+        # 在全市場 (260檔) 計算各指標百分位 PR，才能知道在全市場中的相對強弱
         for col in features_to_analyze:
             if col in analysis_df.columns and pd.api.types.is_numeric_dtype(analysis_df[col]):
                 analysis_df[f"{col}_pct"] = analysis_df[col].rank(pct=True)
                 valid_features.append(col)
         
+        # 只要篩選出來的前幾名 (例如 Rank 1~5)
         display_df = analysis_df[analysis_df['rank'].isin(ranks_to_show)].copy()
         
+        reasons = []
         for _, row in display_df.iterrows():
             stock_info = f"Rank {int(row['rank'])}. [{row['id']}] {row['name']} (得分: {row['predict_score']:.4f})"
             print(f"\n{stock_info}") 
@@ -182,20 +184,24 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
             
             if strong_feats:
                 output_str = ", ".join([f"{k}(PR{v*100:.1f})" for k, v in strong_feats])
-                print(output_str) # 保留螢幕輸出
             else:
-                print("指標分佈平均，無顯著單一強項。")
+                output_str = "指標分佈平均，無顯著單一強項。"
             
-    # 執行分析，並把結果存進變數
-    get_feature_analysis_string(target_df, select_ranks, feature_cols)
+            print(output_str) # 保留螢幕輸出
+            reasons.append(output_str)
+            
+        display_df['reason'] = reasons
+        return display_df
+            
+    # 只取前幾名並附帶 reason
+    top_picks = get_feature_analysis(target_df, select_ranks, feature_cols)
 
     # 4. 存檔
-    top_picks = target_df[target_df['rank'].isin(select_ranks)].copy()
     prediction_dir = config.get_version_dir(config.STOCK_PREDICTION_REPORT_DIR, version)
     file_name = f'{latest_date.date().strftime("%Y-%m-%d")}.csv'
     output_dir = prediction_dir / file_name
     try:
-        top_picks[['rank', 'id', 'name', 'predict_score', 'close']].to_csv(output_dir, index=False, encoding='utf-8-sig')
+        top_picks[['rank', 'id', 'name', 'predict_score', 'close', 'reason']].to_csv(output_dir, index=False, encoding='utf-8-sig')
         print(f"\n預測結果已成功儲存至: {output_dir}")
     except PermissionError:
         print(f"\n錯誤：無法儲存檔案。請確認 {file_name} 是否正被 Excel 或其他程式開啟！")
@@ -204,6 +210,6 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
 if __name__ == "__main__":
     #print(search_stock('台光電', version='v33'))
-    result = prediction(version='v38', select_ranks=[c for c in range(1,6)])
+    result = prediction(version='v47', select_ranks=[c for c in range(1,6)])
     if isinstance(result, str):
         print(result)

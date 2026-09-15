@@ -116,7 +116,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 # 主回測函式
 # ──────────────────────────────────────────────
 
-def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open=False, delay_days=0, silent=False, export=True, use_market_temper=True):
+def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=False, delay_days=0, silent=False, export=True, use_market_temper=True):
     if select_rank is None:
         select_rank = list(range(1, 6))
 
@@ -140,7 +140,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
 
     rank_str = ','.join(map(str, select_rank))
     if not silent:
-        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: {benchmark} | 溫度調控: {use_market_temper}")
+        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: 0050 & 00631L | 溫度調控: {use_market_temper}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
     market_file = config.MARKET_DATA_DIR / "market.parquet"
@@ -468,14 +468,17 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
     monthly_win_loss_ratio = monthly_wins.mean() / abs(monthly_losses.mean()) if len(monthly_losses) > 0 and monthly_losses.mean() != 0 else float('inf')
 
     # ──────────────────────────────────────────────
-    # 6. 對照組
+    # 6. 對照組 (0050 & 00631L)
     # ──────────────────────────────────────────────
     if not silent:
-        print(f"讀取對照組 ({benchmark})...")
-    benchmark_nav    = None
-    bench_total_ret  = 0.0
-    bench_annual_ret = 0.0
-    bdf = pd.DataFrame()
+        print("讀取對照組 (0050 & 00631L)...")
+    nav_0050        = None
+    ret_0050        = 0.0
+    annual_0050     = 0.0
+    nav_631         = None
+    ret_631         = 0.0
+    annual_631      = 0.0
+    bdf             = pd.DataFrame()
 
     try:
         start_d = results_df['date'].min().strftime('%Y-%m-%d')
@@ -485,40 +488,40 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         if os.path.exists(etf_path):
             etf_df = pd.read_csv(etf_path)
             etf_df['date'] = pd.to_datetime(etf_df['date'])
-            
-            if benchmark in etf_df.columns:
-                # 篩選日期
-                bdf = etf_df[(etf_df['date'] >= start_d) & (etf_df['date'] <= end_d)].copy()
-                if not bdf.empty:
-                    bdf = bdf.set_index('date')
-                    close = bdf[benchmark]
-                    benchmark_nav    = close / close.iloc[0]
-                    bench_total_ret  = benchmark_nav.iloc[-1] - 1.0
-                    n_years          = (bdf.index[-1] - bdf.index[0]).days / 365.25
-                    bench_annual_ret = (benchmark_nav.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
-            else:
-                if not silent: print(f"警告：etf.csv 中找不到 {benchmark} 欄位。")
+            bdf = etf_df[(etf_df['date'] >= start_d) & (etf_df['date'] <= end_d)].copy()
+            if not bdf.empty:
+                bdf = bdf.set_index('date')
+                n_years = (bdf.index[-1] - bdf.index[0]).days / 365.25
+
+                if '0050' in bdf.columns:
+                    c50 = bdf['0050'].dropna()
+                    if not c50.empty:
+                        nav_0050 = c50 / c50.iloc[0]
+                        ret_0050 = nav_0050.iloc[-1] - 1.0
+                        annual_0050 = (nav_0050.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
+
+                if '00631L' in bdf.columns:
+                    c631 = bdf['00631L'].dropna()
+                    if not c631.empty:
+                        nav_631 = c631 / c631.iloc[0]
+                        ret_631 = nav_631.iloc[-1] - 1.0
+                        annual_631 = (nav_631.iloc[-1] ** (1 / max(n_years, 1/12))) - 1.0
         else:
             if not silent: print(f"找不到 {etf_path}，跳過對照組。")
     except Exception as e:
         if not silent: print(f"對照組讀取失敗: {e}")
 
-
-    # Alpha & Beta 計算
+    # Alpha & Beta 計算 (固定以 0050 全市場基準衡量)
     beta = 0.0
     alpha = 0.0
-    if not bdf.empty and benchmark in bdf.columns:
-        # 計算基準日報酬
-        bdf['bench_ret'] = bdf[benchmark].pct_change().dropna()
-        # 對齊日期
-        align_df = pd.concat([daily_returns, bdf['bench_ret']], axis=1, join='inner').dropna()
+    if not bdf.empty and '0050' in bdf.columns:
+        bdf['ret_0050'] = bdf['0050'].pct_change().dropna()
+        align_df = pd.concat([daily_returns, bdf['ret_0050']], axis=1, join='inner').dropna()
         if len(align_df) > 1:
             cov = align_df.cov().iloc[0, 1]
-            var = align_df['bench_ret'].var()
+            var = align_df['ret_0050'].var()
             beta = cov / var if var != 0 else 0.0
-            # Alpha = 策略日均報酬 - Beta * 大盤日均報酬
-            # 轉換成年化 Alpha
-            daily_alpha = align_df['daily_nav'].mean() - beta * align_df['bench_ret'].mean()
+            daily_alpha = align_df['daily_nav'].mean() - beta * align_df['ret_0050'].mean()
             alpha = daily_alpha * 252
 
     if not silent:
@@ -544,8 +547,12 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         print(f"日 Sortino:   {daily_sortino:>10.2f}")
         print(f"日勝率:       {daily_winrate:>10.2f}%")
         print("-" * 80)
-        print(f"Beta (benchmark): {beta:>10.2f}")
-        print(f"Alpha(年化):      {alpha*100:>10.2f}%")
+        # if nav_0050 is not None:
+        #     print(f"0050   總報酬 / 年化:   {ret_0050*100:>10.2f}%  /  {annual_0050*100:>6.2f}%")
+        # if nav_631 is not None:
+        #     print(f"00631L 總報酬 / 年化:   {ret_631*100:>10.2f}%  /  {annual_631*100:>6.2f}%")
+        print(f"Beta (vs 0050):       {beta:>10.2f}")
+        print(f"Alpha(年化, vs 0050): {alpha*100:>10.2f}%")
         print("-" * 80)
         bull_months = (results_df['mk_val'] > 1.0).sum() if 'mk_val' in results_df.columns else 0
         def_months  = (results_df['mk_val'] <= 1.0).sum() if 'mk_val' in results_df.columns else 0
@@ -578,7 +585,7 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
         .reset_index()
     )
 
-    # 圖表 1：NAV 走勢
+    # 圖表 1：NAV 走勢（三條線：策略、0050、00631L）
     if not silent:
         fig1, ax1 = plt.subplots(figsize=(14, 5))
         label_ai = (f'Rank {rank_str}  |  NAV {nav:.3f}  '
@@ -596,14 +603,22 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
                      bbox=dict(boxstyle='round,pad=0.3', fc='yellow', alpha=0.5),
                      arrowprops=dict(arrowstyle='->', color='crimson', lw=1.5))
 
-        if benchmark_nav is not None:
-            label_b = (f'{benchmark}  |  NAV {benchmark_nav.iloc[-1]:.3f}  '
-                       f'({bench_total_ret*100:.0f}%  /  Annual {bench_annual_ret*100:.1f}%)')
-            ax1.plot(bdf.index, benchmark_nav,
-                     label=label_b, color='steelblue', linestyle='--', alpha=0.75)
+        # 0050 基準線 (steelblue 虛線)
+        if nav_0050 is not None:
+            label_50 = (f'0050    |  NAV {nav_0050.iloc[-1]:.3f}  '
+                        f'({ret_0050*100:.0f}%  /  Annual {annual_0050*100:.1f}%)')
+            ax1.plot(nav_0050.index, nav_0050,
+                     label=label_50, color='steelblue', linestyle='--', alpha=0.85)
+
+        # 00631L 灰線 (gray 虛線--)
+        if nav_631 is not None:
+            label_631 = (f'00631L  |  NAV {nav_631.iloc[-1]:.3f}  '
+                         f'({ret_631*100:.0f}%  /  Annual {annual_631*100:.1f}%)')
+            ax1.plot(nav_631.index, nav_631,
+                     label=label_631, color='gray', linestyle='--', alpha=0.75)
 
         ax1.axhline(1.0, color='gray', linewidth=0.8, linestyle=':')
-        ax1.set_title(f'Cumulative NAV  —  Rank {rank_str} vs {benchmark}')
+        ax1.set_title(f'Cumulative NAV  —  Rank {rank_str} vs 0050 & 00631L')
         ax1.set_ylabel('NAV (base=1.0)')
         ax1.legend(loc='upper left')
         ax1.grid(True, alpha=0.3)
@@ -670,4 +685,4 @@ def backtester(version, select_rank=None, benchmark='00631L', entry_on_next_open
 
 if __name__ == "__main__":
     import sys
-    backtester(version='v47', select_rank=list(range(1, 4)), benchmark='00631L', entry_on_next_open=False)
+    backtester(version='v48', select_rank=list(range(1, 4)), entry_on_next_open=False)

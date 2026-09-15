@@ -39,7 +39,6 @@ if __name__ == "__main__":
     # market=1上市；=2上櫃
 
     # industry_code=
-    # 05:電機(上銀)
     # 24:半導體
     # 25:電腦周邊
     # 26:光電業
@@ -51,7 +50,7 @@ if __name__ == "__main__":
 
     final_data_list = []
     for market in range(1, 3):
-        for code in ['05', '24', '25', '26', '27', '28', '29', '30', '31']:
+        for code in ['24', '25', '26', '27', '28', '29', '30', '31']:
             url = f'https://isin.twse.com.tw/isin/class_main.jsp?owncode=&stockname=&isincode=&market={market}&issuetype=&industry_code={code}&Page=1&chklike=Y'
             print(f"爬取中: market={market}, code={code}")  # 方便追蹤進度
             data = scraper(url)

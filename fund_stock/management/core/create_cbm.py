@@ -98,9 +98,9 @@ def create_cbm(version=None):
 
     # 6. 訓練模型
     model = CatBoostRanker(
-        iterations=7000,
+        iterations=6000,
         learning_rate=0.001,
-        depth=6,
+        depth=5,
         loss_function='YetiRank',
         eval_metric='NDCG:top=5',
         custom_metric=['NDCG:top=5','PrecisionAt:top=5'],
