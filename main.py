@@ -28,8 +28,8 @@ from market_data.sync_data import sync
 from fund_stock.management.core.prediction import prediction
 from fund_stock.management.core.backtest.simulator import backtester
 from fund_stock.management.core.backtest.analysis import bt_analysis
-from fund_stock.management.data.cleaning.train import create_training
-from fund_stock.management.data.cleaning.pred import create_prediction
+from fund_stock.management.pipeline.train import create_training
+from fund_stock.management.pipeline.pred import create_prediction
 from fund_stock.management.core.create_cbm import create_cbm
 from fund_stock.administration.update_navpu import update_quant
 from fund_stock.macro_research.market_temper import analyze_market_temper

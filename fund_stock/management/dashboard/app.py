@@ -203,7 +203,7 @@ def main():
 
     # 2. 全域警報
     unrealized_data, _, _, _ = calculate_settlement_data(df_record, df_price)
-    msgs = generate_system_alerts(df_record, df_price, df_0050, unrealized_data)
+    msgs = generate_system_alerts(df_record, df_price, df_0050, unrealized_data, df_history)
     if msgs:
         for m in msgs:
             alert(m)

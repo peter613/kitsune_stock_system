@@ -16,6 +16,7 @@ sandbox/
 
 #檔案太大
 *.csv
+!**/white_list.csv
 *.parquet
 *.png
 *.cbm

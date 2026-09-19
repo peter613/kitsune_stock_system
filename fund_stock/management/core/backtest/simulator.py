@@ -4,10 +4,11 @@
 2.營收
 
 二、風控
-1.微觀個股移動停損
-2.宏觀帳戶移動停損
-3.宏觀帳戶%數停利
-4.入場白名單kama_mean控制部位
+1.微觀個股第一階段移動減碼 (高點回撤 10% 砍半 50%)
+2.微觀個股第二階段移動停損 (高點回撤 20% 全清倉)
+3.宏觀帳戶高點移動停損 (總資產自高點跌 10% 全清倉)
+4.宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
+5.入場白名單kama_mean控制部位
 """
 
 import matplotlib
@@ -65,30 +66,34 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 
     print("目前模型腦中的特徵有：", model.feature_names_)
     
-    all_trade_records = []
-
-    unique_dates = sorted(test_df['date'].unique())
     feature_names = model.feature_names_
+    picks_mask = test_df['rank'].isin(select_rank)
+    picks_df = test_df[picks_mask].copy()
 
-    print("正在分析選股原因 (SHAP Analysis)...")
+    if picks_df.empty:
+        return
+
+    print("正在分析選股原因 (SHAP Analysis - 僅針對選中標的極速分析)...")
     explainer = shap.TreeExplainer(model)
-    shap_values_all = explainer.shap_values(test_df[feature_names])
+    shap_values_picks = explainer.shap_values(picks_df[feature_names])
+
+    all_trade_records = []
+    unique_dates = sorted(picks_df['date'].unique())
+
+    # Map each pick index to its shap values
+    pick_shap_map = {idx: shap_values_picks[i] for i, idx in enumerate(picks_df.index)}
 
     for date in unique_dates:
-        date_mask = test_df['date'] == date
-        group = test_df[date_mask].copy()
-
-        top_picks = group[group['rank'].isin(select_rank)].copy()
-        if top_picks.empty:
+        group = picks_df[picks_df['date'] == date]
+        if group.empty:
             continue
 
         # 使用回測後已覆寫的 simulated_return（若存在），否則用原始 return_20d
-        ret_col = 'simulated_return' if 'simulated_return' in top_picks.columns else 'return_10d'
-        monthly_avg = top_picks[ret_col].mean() * 100
+        ret_col = 'simulated_return' if 'simulated_return' in group.columns else 'return_10d'
+        monthly_avg = group[ret_col].mean() * 100
 
-        for idx_in_df, row in top_picks.iterrows():
-            abs_idx = test_df.index.get_loc(idx_in_df)
-            stock_shap = shap_values_all[abs_idx]
+        for idx_in_df, row in group.iterrows():
+            stock_shap = pick_shap_map[idx_in_df]
 
             top_indices = np.argsort(stock_shap)[-6:][::-1]
             reasons = [f"{feature_names[j]}({stock_shap[j]:.2f})" for j in top_indices]
@@ -116,7 +121,20 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 # 主回測函式
 # ──────────────────────────────────────────────
 
-def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=False, delay_days=0, silent=False, export=True, use_market_temper=True):
+def backtester(
+    version,
+    select_rank=None,
+    benchmark='0050',
+    entry_on_next_open=False,
+    delay_days=0,
+    silent=False,
+    export=True,
+    use_market_temper=True,
+    use_stock_staged_stop=True,
+    stock_stage1_stop=0.10,
+    stock_stage1_ratio=0.50,
+    stock_trailing_stop=0.20,
+):
     if select_rank is None:
         select_rank = list(range(1, 6))
 
@@ -132,11 +150,13 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
     REVENUE_THRESHOLD = 100000 # 2. 當月營收 > 1.0億 (設為0則不過濾)
 
     # ── 二、風控 (Risk Management - 奧坎剃刀架構) ────────
-    STOCK_TRAILING_STOP = 0.20 # 1. 微觀個股高點移動停損 (回撤 20% 觸發，最慘為進場跌 20%)
-    MACRO_STOP_LOSS     = 0.10 # 2. 宏觀帳戶高點移動停損 (總資產自高點跌 10% 全清倉)
-    MACRO_TAKE_PROFIT   = 0.10 # 3. 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋變現)
+    STOCK_STAGE1_STOP   = stock_stage1_stop   # 1. 微觀個股高點移動減碼 (回撤 10% 砍半 50%)
+    STOCK_STAGE1_RATIO  = stock_stage1_ratio  #    第 1 階段減碼比例 (50%)
+    STOCK_TRAILING_STOP = stock_trailing_stop # 2. 微觀個股高點移動停損 (回撤 20% 全清倉)
+    MACRO_STOP_LOSS     = 0.10 # 3. 宏觀帳戶高點移動停損 (總資產自高點跌 10% 全清倉)
+    MACRO_TAKE_PROFIT   = 0.10 # 4. 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋變現)
     TRIM_RATIO          = 0.25 #    停利減碼比例 (25%)
-    # 4. 入場白名單 kama_mean 控制部位由 use_market_temper 參數控制 (0.75 / 0.50 / 1.00)
+    # 5. 入場白名單 kama_mean 控制部位由 use_market_temper 參數控制 (0.75 / 0.50 / 1.00)
 
     rank_str = ','.join(map(str, select_rank))
     if not silent:
@@ -156,7 +176,7 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
         need_rebuild = True
 
     if need_rebuild:
-        from fund_stock.management.data.cleaning.bt import create_backtest_features
+        from fund_stock.management.pipeline.bt import create_backtest_features
         create_backtest_features(version=version, years_10=True, stock_filter=True)
 
     df = pd.read_csv(DATA_FILE, dtype={'id': str})
@@ -204,9 +224,10 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
     capital         = float(INITIAL_CAPITAL)
     monthly_results = []
     daily_records   = []  # 用於記錄日 NAV 序列
-    stop_loss_count = 0
-    macro_stop_count = 0
-    macro_trim_count = 0
+    stop_loss_count    = 0
+    stock_stage1_count = 0
+    macro_stop_count   = 0
+    macro_trim_count   = 0
 
     if not silent:
         print("進入單位淨值法回測迴圈 (日監控模式)...")
@@ -243,16 +264,17 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
                         entry_p = f_data.iloc[delay_days]['close']
                     f_data = f_data.iloc[delay_days:].head(20)
                     portfolio[idx] = {
-                        's_id'    : s_id,
-                        'entry_p' : entry_p,
-                        'shares'  : net_alloc_per_stock / entry_p,
-                        'dates'   : f_data.index.get_level_values('date'),
-                        'prices'  : f_data['close'].values,
-                        'alive'   : True,
+                        's_id'          : s_id,
+                        'entry_p'       : entry_p,
+                        'shares'        : net_alloc_per_stock / entry_p,
+                        'dates'         : f_data.index.get_level_values('date'),
+                        'prices'        : f_data['close'].values,
+                        'alive'         : True,
                         # 追蹤該股自己回收的現金（停損/砍倉/再平衡），
                         # 用於計算個股 simulated_return
-                        'own_cash': 0.0,
-                        'peak_p'  : entry_p,  # 追蹤個股進場後最高收盤價
+                        'own_cash'      : 0.0,
+                        'peak_p'        : entry_p,  # 追蹤個股進場後最高收盤價
+                        'stage1_trimmed': False,    # 標記是否已執行過個股第 1 階段減碼
                     }
             except KeyError:
                 cash_pool += net_alloc_per_stock
@@ -340,7 +362,22 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
                         cur_p = p['prices'][d_idx]
                         if cur_p > p['peak_p']:
                             p['peak_p'] = cur_p
-                        if cur_p <= p['peak_p'] * (1 - STOCK_TRAILING_STOP):
+
+                        # 階梯停損：第 1 階段微觀移動減碼 (預設回撤 10% 砍半 50%)
+                        if use_stock_staged_stop and not p['stage1_trimmed']:
+                            if cur_p <= p['peak_p'] * (1.0 - STOCK_STAGE1_STOP):
+                                shares_to_trim = p['shares'] * STOCK_STAGE1_RATIO
+                                sell_val       = shares_to_trim * cur_p
+                                fee            = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                                net_proceeds   = sell_val - fee
+                                cash_pool     += net_proceeds
+                                p['own_cash'] += net_proceeds
+                                p['shares']   -= shares_to_trim
+                                p['stage1_trimmed'] = True
+                                stock_stage1_count += 1
+
+                        # 第 2 階段微觀移動清倉 (預設回撤 20% 全清倉)
+                        if cur_p <= p['peak_p'] * (1.0 - STOCK_TRAILING_STOP):
                             sell_val      = p['shares'] * cur_p
                             fee           = _calc_tx_cost(sell_val, TRANSACTION_COST)
                             net_proceeds  = sell_val - fee
@@ -557,7 +594,9 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
         bull_months = (results_df['mk_val'] > 1.0).sum() if 'mk_val' in results_df.columns else 0
         def_months  = (results_df['mk_val'] <= 1.0).sum() if 'mk_val' in results_df.columns else 0
         print(f"月數:              {total_months}")
-        print(f"微觀{STOCK_TRAILING_STOP*100:.0f}%高點移動停損次數:  {stop_loss_count} 次")
+        if use_stock_staged_stop:
+            print(f"微觀{STOCK_STAGE1_STOP*100:.0f}%高點移動砍半次數: {stock_stage1_count} 次")
+        print(f"微觀{STOCK_TRAILING_STOP*100:.0f}%高點移動全砍次數: {stop_loss_count} 次")
         print(f"宏觀停損觸發:      {macro_stop_count} 次")
         print(f"宏觀停利觸發:      {macro_trim_count} 次")
         print(f"大盤多頭月數 (>0.98): {bull_months} 個月 (滿倉進場)")
@@ -685,4 +724,4 @@ def backtester(version, select_rank=None, benchmark='0050', entry_on_next_open=F
 
 if __name__ == "__main__":
     import sys
-    backtester(version='v48', select_rank=list(range(1, 4)), entry_on_next_open=False)
+    backtester(version='v51', select_rank=list(range(1, 4)), entry_on_next_open=False)

@@ -14,11 +14,12 @@ MARKET_DIAGNOSE_DIR = BASE_DIR / "market_data" / "diagnose"
 #=============================
 FUND_STOCK_MANAGEMENT_DIR = BASE_DIR / "fund_stock" / "management"
 
-# Data Paths
-STOCK_FEATURES_DIR = FUND_STOCK_MANAGEMENT_DIR / "data" / "features"
+# Pipeline & Features Data Paths
+STOCK_PIPELINE_DIR = FUND_STOCK_MANAGEMENT_DIR / "pipeline"
+STOCK_FEATURES_DIR = FUND_STOCK_MANAGEMENT_DIR / "features_data"
 STOCK_TRAIN_FEATURES_DIR = STOCK_FEATURES_DIR / "train"
 STOCK_BT_FEATURES_DIR = STOCK_FEATURES_DIR / "bt"
-STOCK_WHITE_LIST_DIR = FUND_STOCK_MANAGEMENT_DIR / "data" / "cleaning"
+STOCK_WHITE_LIST_DIR = MARKET_DATA_DIR
 
 # Live Path
 STOCK_JOURNAL_DIR = FUND_STOCK_MANAGEMENT_DIR / "journal"

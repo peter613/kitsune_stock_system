@@ -17,6 +17,7 @@ from fund_stock.management.dashboard.engine import (
     calc_dd_series,
     calculate_quality_comparison,
     calculate_subscriber_holding_ratio,
+    calculate_macro_drawdown,
 )
 
 # ══════════════════════════════════════════
@@ -165,7 +166,7 @@ def render_holding_ratio_chart(df_flows=None):
         y=names,
         orientation='h',
         marker=dict(
-            color='#1A2B4C',
+            color="#7B7A7A",
             line=dict(color='#1A2B4C', width=1)
         ),
         # 長條外側直接常駐顯示【姓名 + 百分比】，一目瞭然
@@ -563,22 +564,7 @@ def page_allocation(df_history, df_record, df_price):
 # 頁面 6：持倉概況
 # ══════════════════════════════════════════
 def page_unrealized(df_record, df_price, df_history):
-    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
-    macro_drawdown = 0.0
-    entry_date_str = ""
-    if not recent_buys.empty:
-        # 取最近一次買進的月份
-        latest_month = recent_buys['date'].max().to_period('M')
-        # 抓該月份的「第一筆買進日」作為本週期起點
-        entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
-        entry_date_str = entry_date.strftime('%m/%d')
-        
-        # 尋找進場日之後的最高淨值 (作為移動停利/停損的基準)
-        period_df = df_history[df_history['date'] >= entry_date]
-        if not period_df.empty:
-            peak_nav = period_df['total_nav'].max()
-            current_nav = df_history['total_nav'].iloc[-1]
-            macro_drawdown = (current_nav / peak_nav - 1.0) * 100
+    macro_drawdown, entry_date_str = calculate_macro_drawdown(df_record, df_history)
     st.title("持倉概況")
     if df_record.empty:
         st.warning("無數據")
@@ -682,7 +668,9 @@ def page_unrealized(df_record, df_price, df_history):
                     st.plotly_chart(fig, width='stretch')
                 else:
                     st.warning("本地資料庫找不到此股票的歷史資料。")
-        
+    else:
+        st.info("目前投組全數持有現金（空倉防禦狀態），無任何持倉股票")
+
 
 # ══════════════════════════════════════════
 # 頁面 7：週期獲利

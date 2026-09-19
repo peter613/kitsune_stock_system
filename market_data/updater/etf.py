@@ -16,7 +16,7 @@ warnings.filterwarnings('ignore')
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # ── 設定區 ──
-ETF_LIST = ['0050', '00631L', '00919', '0056', '00878']   # ← 未來只要在這裡加代號
+ETF_LIST = ['0050', '00631L'] #那斯達克：00662 道瓊：00668 標普500：00646
 START_DATE = '2015-01-01'
 
 

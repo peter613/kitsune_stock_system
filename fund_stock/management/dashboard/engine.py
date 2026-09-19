@@ -143,12 +143,14 @@ def calculate_settlement_data(df_record, df_price):
         last_sell_date  = None
         last_buy_date   = None
         cycle_start_date = None
+        has_trimmed_in_cycle = False
 
         for _, row in sub.iterrows():
             trade_val = row['price'] * row['share']
             if row['action'] == 'buy':
                 if cum_shares <= 0.0001:
                     cycle_start_date = row['date']
+                    has_trimmed_in_cycle = False
                 fee         = int(trade_val * 0.001425)
                 cum_shares += row['share']
                 total_cost += trade_val + fee
@@ -188,6 +190,9 @@ def calculate_settlement_data(df_record, df_price):
                     total_sell_cost = 0.0
                     last_sell_date  = None
                     cycle_start_date = None
+                    has_trimmed_in_cycle = False
+                else:
+                    has_trimmed_in_cycle = True
 
         # 迴圈結束後，如果還有未清空的已賣出紀錄 (異常防呆)
         if total_sell_cost > 0 and last_sell_date is not None and cum_shares > 0.0001:
@@ -240,6 +245,7 @@ def calculate_settlement_data(df_record, df_price):
                 "高點回撤":   f"{dd_pct:.2f}%",
                 "未實現損益": round(u_pnl, 0),
                 "當前市值":   round(mv, 0),
+                "has_trimmed": has_trimmed_in_cycle,
             })
 
     total_unrealized = sum(item["未實現損益"] for item in unrealized_data)
@@ -251,54 +257,82 @@ def calculate_settlement_data(df_record, df_price):
 # ──────────────────────────────────────────
 # 模組 3：風控警報
 # ──────────────────────────────────────────
-def _check_rebalance_alerts(df_record, df_price):
-    if df_record.empty or df_price.empty:
-        return []
-
-    df_trade  = df_record[~df_record['id'].str.startswith('00')].copy()
-    latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict()
-    holdings  = {}
-    pure_equity_mv = 0.0
-
-    for aid in df_trade['id'].unique():
-        sub    = df_trade[df_trade['id'] == aid]
-        shares = sub[sub['action'] == 'buy']['share'].sum() - sub[sub['action'] == 'sell']['share'].sum()
-        if shares > 0:
-            px = latest_px.get(aid, 0.0)
-            if px == 0.0:
-                last_buy = sub[sub['action'] == 'buy']
-                px = last_buy['price'].iloc[-1] if not last_buy.empty else 0.0
-            if px > 0:
-                mv   = shares * px
-                name = sub['name'].iloc[0] if 'name' in sub.columns else ""
-                holdings[aid]   = {'name': name, 'shares': shares, 'price': px, 'mv': mv}
-                pure_equity_mv += mv
-
+def _check_micro_stage1_stoploss_alerts(unrealized_data, threshold=-10.0, stage2_threshold=-20.0):
     alerts = []
-    if pure_equity_mv > 0:
-        for aid, data in holdings.items():
-            weight = data['mv'] / pure_equity_mv
-            if weight > 0.25:
-                sell_value  = (data['mv'] - 0.20 * pure_equity_mv) / 0.8
-                sell_shares = int(sell_value / data['price'])
-                alerts.append(
-                    f"【指令 : 重構】{aid} {data['name']} 投組權重大於25% "
-                    f"(目前{weight*100:.1f}%)，需賣出市值 {sell_value:,.0f} "
-                    f"(約需賣出 {sell_shares} 股)"
-                )
+    for item in unrealized_data:
+        # 若本週期該股已執行過減碼（如已砍半），不再重複觸發 Stage 1 減碼警報
+        if item.get("has_trimmed", False):
+            continue
+
+        dd_float = float(item.get("高點回撤", "0%").replace("%", ""))
+        roi_float = float(item["累積報酬率"].replace("%", ""))
+        max_loss = min(dd_float, roi_float)
+
+        # 若已跌破 Stage 2 門檻 (-20%)，交由 Stage 2 警報處理，避免重複警報
+        if max_loss <= stage2_threshold:
+            continue
+
+        if max_loss <= threshold:
+            alerts.append(
+                f"【指令 : 滅止 】觸發 {abs(threshold):.0f}% 微觀移動停損 ， {item['代號']} {item['名稱']} 砍半倉，高點回撤已達 {dd_float:.1f}%"
+            )
     return alerts
 
-
-def _check_stoploss_alerts(unrealized_data, threshold=-20.0):
+def _check_micro_stage2_stoploss_alerts(unrealized_data, threshold=-20.0):
     alerts = []
     for item in unrealized_data:
         dd_float = float(item.get("高點回撤", "0%").replace("%", ""))
         roi_float = float(item["累積報酬率"].replace("%", ""))
-        if dd_float <= threshold or roi_float <= threshold:
+        max_loss = min(dd_float, roi_float)
+
+        if max_loss <= threshold:
             alerts.append(
-                f"【指令 : 滅止 】{item['代號']} {item['名稱']} 高點回撤已達 {dd_float:.1f}%，觸發 20% 移動停損保險機制"
+                f"【指令 : 滅止 】觸發 {abs(threshold):.0f}% 微觀移動停損 ， {item['代號']} {item['名稱']} 砍全倉，高點回撤已達 {dd_float:.1f}%"
             )
     return alerts
+
+def calculate_macro_drawdown(df_record: pd.DataFrame, df_history: pd.DataFrame) -> tuple[float, str]:
+    """
+    計算當前週期自最新買進月份以來的宏觀高點回撤 (Macro Drawdown)
+    回傳：(macro_drawdown, entry_date_str)
+    """
+    if df_record.empty or df_history.empty:
+        return 0.0, ""
+
+    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
+    if recent_buys.empty:
+        return 0.0, ""
+
+    # 取最近一次買進的月份，並抓該月份第一筆買進日作為本週期起點
+    latest_month = recent_buys['date'].max().to_period('M')
+    entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
+    entry_date_str = entry_date.strftime('%m/%d')
+
+    # 尋找進場日之後的最高淨值 (作為移動停利/停損的基準)
+    period_df = df_history[df_history['date'] >= entry_date]
+    if period_df.empty:
+        return 0.0, entry_date_str
+
+    peak_nav = period_df['total_nav'].max()
+    current_nav = df_history['total_nav'].iloc[-1]
+    macro_drawdown = (current_nav / peak_nav - 1.0) * 100 if peak_nav > 0 else 0.0
+
+    return min(0.0, macro_drawdown), entry_date_str
+
+
+def _check_macro_stoploss_alerts(df_record, df_history, threshold=-10.0):
+    """
+    宏觀總經/投組移動停損警報
+    """
+    if df_record.empty or df_history.empty:
+        return []
+
+    macro_drawdown, entry_date_str = calculate_macro_drawdown(df_record, df_history)
+    if macro_drawdown <= threshold:
+        return [
+            f"【指令 : 熔毀 】觸發 {abs(threshold):.0f}% 宏觀移動停損 ， 本週期{entry_date_str}投組高點回撤已達 {macro_drawdown:.1f}%"
+        ]
+    return []
 
 
 def _check_bear_market_alerts(df_0050, threshold=-0.20):
@@ -310,21 +344,25 @@ def _check_bear_market_alerts(df_0050, threshold=-0.20):
         return []
     drawdown = (latest_price - max_price) / max_price
     if drawdown <= threshold:
-        return [f"【指令 : 凜冬 】 大盤已從高點回撤 {drawdown*100:.1f}%，正式進入熊市，全面砍倉。"]
+        return [f"【指令 : 凜冬 】 正式進入熊市，全面砍倉 ， 大盤已從高點回撤 {drawdown*100:.1f}%"]
     return []
 
 
-def generate_system_alerts(df_record, df_price, df_0050, unrealized_data):
+def generate_system_alerts(df_record, df_price, df_0050, unrealized_data, df_history=None):
     """
     統一收集並回傳所有風控警報。
+    防呆機制：若目前投組已無任何持倉股票（100% 現金空倉狀態），代表清倉/停損指令皆已執行，不需再發出警報。
     """
-    alerts = []
-    alerts.extend(_check_bear_market_alerts(df_0050))
-    alerts.extend(_check_stoploss_alerts(unrealized_data))
+    has_active_holdings = len(unrealized_data) > 0 and any(item.get("股數", 0) > 0 for item in unrealized_data)
 
-    #暫且不比例獲利平衡(心理作用，回測無增加績效)
-    #alerts.extend(_check_rebalance_alerts(df_record, df_price))
-    
+    alerts = []
+    if has_active_holdings:
+        alerts.extend(_check_bear_market_alerts(df_0050))
+        alerts.extend(_check_micro_stage1_stoploss_alerts(unrealized_data))
+        alerts.extend(_check_micro_stage2_stoploss_alerts(unrealized_data))
+        if df_history is not None:
+            alerts.extend(_check_macro_stoploss_alerts(df_record, df_history))
+
     return alerts
 
 
@@ -433,4 +471,4 @@ def calculate_subscriber_holding_ratio(df_flows=None) -> pd.DataFrame:
     df_res = pd.DataFrame(results)
     if not df_res.empty:
         df_res = df_res.sort_values('ratio', ascending=False).reset_index(drop=True)
-    return df_res
+    return df_res

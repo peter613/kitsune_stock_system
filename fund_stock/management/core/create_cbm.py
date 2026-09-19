@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import matplotlib
 import pandas as pd
 import numpy as np
@@ -8,8 +14,8 @@ from datetime import datetime
 import config
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('TKAgg')
 import shap
+from fund_stock.management.pipeline._features import FEATURE_COLS
 
 def plot_shap_values(model,test_pool,test_df,X_col,version):
 
@@ -52,27 +58,8 @@ def create_cbm(version=None):
 
     df = df.sort_values(['date', 'id']).reset_index(drop=True)
 
-    feature_cols = [
-        # 趨勢強度
-        "kama",'adx',
+    feature_cols = FEATURE_COLS
 
-        # 大盤濾網
-        "market_kama_mean",'market_adx_mean','market_resistance_mean',
-
-        # 動能排名與量能
-        'vol_surge_signed','hist_return_60',
-
-        # 籌碼與法人動能
-        #"trust_in",
-
-        # 基本面
-        "yoy", 
-        "rev_bias_3",'rev_breakout_12',
-
-        # 位階
-        "breakout_200",
-        'resistance_20',"support_20",
-    ]
 
     print(f"使用 {len(feature_cols)} 個特徵進行訓練")
     # 4. 切分訓練集 (前 80%) 與 驗證集 (後 20%)
@@ -100,13 +87,14 @@ def create_cbm(version=None):
     model = CatBoostRanker(
         iterations=6000,
         learning_rate=0.001,
-        depth=5,
+        depth=5,#原本5
         loss_function='YetiRank',
         eval_metric='NDCG:top=5',
         custom_metric=['NDCG:top=5','PrecisionAt:top=5'],
         verbose=200,
         random_seed=42,
-        thread_count=-1
+        thread_count=-1,
+        use_best_model=True,
     )
 
     print("開始訓練模型...")
@@ -127,4 +115,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v48')
+    create_cbm(version='v51')
