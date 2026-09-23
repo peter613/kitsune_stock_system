@@ -153,9 +153,8 @@ def page_subscriber_nav(df_equity: pd.DataFrame, name: str):
 # 頁面 2：週期紀錄
 # ──────────────────────────────────────────
 def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
-    st.title(f"{name} 的週期紀錄")
-
     if df_equity.empty:
+        st.title(f"{name} 的週期紀錄")
         st.info("尚無認購紀錄。")
         return
 
@@ -164,6 +163,7 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
     df_cycles = load_cycle_periods()
 
     if df_cycles.empty:
+        st.title(f"{name} 的週期紀錄")
         st.warning("尚未設定交易週期資料 (journal.csv 缺少 cycle 欄位)。")
         return
 
@@ -204,6 +204,7 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
 
     cycle_df = pd.DataFrame(rows)
     if cycle_df.empty:
+        st.title(f"{name} 的週期紀錄")
         st.info("該訂閱者在此期間尚無週期參與紀錄。")
         return
 
@@ -224,14 +225,19 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
     else:
         cycle_df['cum_equity_growth_rate'] = 0.0
 
-    # ── 年份選單 ──────────────────────────────────────────
+    # ── 標題與年份選單同一行：左邊標題，右邊選單 ──
     years = sorted(cycle_df['date'].dt.year.dropna().astype(int).unique(), reverse=True)
-    if len(years) > 1:
-        selected_year = st.selectbox("選擇年份", ["全部"] + years)
-        if selected_year != "全部":
-            df_display = cycle_df[cycle_df['date'].dt.year == selected_year].copy()
-        else:
-            df_display = cycle_df.copy()
+    year_options = ["全部"] + [str(y) for y in years]
+
+    col_title, col_sel = st.columns([4, 1])
+    with col_title:
+        st.title(f"{name} 的週期紀錄")
+    with col_sel:
+        st.markdown("<div style='padding-top: 12px;'></div>", unsafe_allow_html=True)
+        selected_year = st.selectbox("年份", year_options, index=0, key=f"port_{name}_year", label_visibility="collapsed")
+
+    if selected_year != "全部":
+        df_display = cycle_df[cycle_df['date'].dt.year == int(selected_year)].copy()
     else:
         df_display = cycle_df.copy()
 
@@ -265,11 +271,6 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
 
     fig.add_hline(y=0, line_dash="dot", line_color="gray", line_width=1)
 
-    n_bars = len(df_display)
-    default_visible = 8
-    start_idx = max(0, n_bars - default_visible) - 0.5
-    end_idx = n_bars - 0.5
-
     fig.update_layout(
         template="plotly_dark",
         hovermode="closest",
@@ -282,16 +283,12 @@ def page_subscriber_performance(df_equity: pd.DataFrame, name: str):
             bordercolor="#5A9BD4",
             font=dict(size=15, color="black", family="Arial"),
         ),
-        xaxis=dict(
-            type='category',
-            title="進場月份與週期",
-            rangeslider=dict(visible=True, thickness=0.08),
-            range=[start_idx, end_idx],
-        ),
+        xaxis=dict(type='category', title="進場月份與週期", fixedrange=True),
+        yaxis=dict(fixedrange=True),
     )
-    fig.update_yaxes(title_text="資產增長 (TWD)", tickformat=",.0f")
+    fig.update_yaxes(title_text="資產增長 (TWD)", tickformat=",.0f", fixedrange=True)
 
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, width='stretch', config={'displayModeBar': False, 'scrollZoom': False})
 
     # ── 數字明細表 ────────────────────────────────────────
     df_table = df_display[['table_label', 'date_range', 'equity', 'cycle_equity_growth_rate', 'cum_equity_growth_rate']].copy()

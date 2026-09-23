@@ -153,6 +153,14 @@ def calculate_settlement_data(df_record, df_price):
         df_trade['date'] = pd.to_datetime(df_trade['date'], errors='coerce')
     has_multi_year = df_trade['date'].dt.year.nunique() > 1 if 'date' in df_trade.columns else False
     m_fmt = "'%y/%m月" if has_multi_year else "%m月"
+
+    # 建立每個週期的統一起始日期（避免同週期內晚買的個股月份不一致，如 Cycle 5 的 3141 晶宏）
+    cycle_start_map = {}
+    if 'cycle' in df_trade.columns:
+        for c_val, c_group in df_trade.groupby('cycle'):
+            if pd.notnull(c_val):
+                cycle_start_map[int(c_val)] = c_group['date'].min()
+
     latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict() if not df_price.empty else {}
     unrealized_data, realized_data = [], []
 
@@ -201,10 +209,11 @@ def calculate_settlement_data(df_record, df_price):
                 
                 # 當部位清空時，結算這一輪的交易
                 if cum_shares <= 0.0001:
-                    start_dt = cycle_start_date if cycle_start_date is not None else last_buy_date
-                    m_prefix = f"{start_dt.strftime(m_fmt)} " if start_dt is not None and pd.notnull(start_dt) else ""
                     if entry_cycle is not None and pd.notnull(entry_cycle):
-                        cycle_str = f"{m_prefix}(Cycle {int(entry_cycle)})" if m_prefix else f"Cycle {int(entry_cycle)}"
+                        c_int = int(entry_cycle)
+                        start_dt = cycle_start_map.get(c_int, cycle_start_date if cycle_start_date is not None else last_buy_date)
+                        m_prefix = f"{start_dt.strftime(m_fmt)} " if start_dt is not None and pd.notnull(start_dt) else ""
+                        cycle_str = f"{m_prefix}(Cycle {c_int})" if m_prefix else f"Cycle {c_int}"
                     elif pd.notnull(last_buy_date):
                         cycle_str = f"{last_buy_date.strftime('%Y/%m')}"
                     else:
@@ -233,10 +242,11 @@ def calculate_settlement_data(df_record, df_price):
 
         # 迴圈結束後，如果還有未清空的已賣出紀錄 (異常防呆)
         if total_sell_cost > 0 and last_sell_date is not None and cum_shares > 0.0001:
-            start_dt = cycle_start_date if cycle_start_date is not None else last_buy_date
-            m_prefix = f"{start_dt.strftime(m_fmt)} " if start_dt is not None and pd.notnull(start_dt) else ""
             if entry_cycle is not None and pd.notnull(entry_cycle):
-                cycle_str = f"{m_prefix}(Cycle {int(entry_cycle)})" if m_prefix else f"Cycle {int(entry_cycle)}"
+                c_int = int(entry_cycle)
+                start_dt = cycle_start_map.get(c_int, cycle_start_date if cycle_start_date is not None else last_buy_date)
+                m_prefix = f"{start_dt.strftime(m_fmt)} " if start_dt is not None and pd.notnull(start_dt) else ""
+                cycle_str = f"{m_prefix}(Cycle {c_int})" if m_prefix else f"Cycle {c_int}"
             elif pd.notnull(last_buy_date):
                 cycle_str = f"{last_buy_date.strftime('%Y/%m')}"
             else:
