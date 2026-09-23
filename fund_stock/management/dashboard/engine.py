@@ -32,13 +32,36 @@ def load_data():
     file_path_transaction = config.FUND_STOCK_ADMINISTRATION_DIR / "transaction.csv"
 
     # ── 股票交易紀錄（journal.csv）──
-    df_record = pd.read_csv(file_path_journal, dtype={'id': str})
+    df_record = pd.read_csv(file_path_journal, dtype={'id': str}, encoding='utf-8-sig')
     df_record.columns  = df_record.columns.str.strip().str.lower()
-    df_record['label'] = df_record['label'].str.strip().str.lower()
+    if 'label' in df_record.columns:
+        df_record['label'] = df_record['label'].fillna('').astype(str).str.strip().str.lower()
+    else:
+        df_record['label'] = ''
+    if 'reason' in df_record.columns:
+        df_record['reason'] = df_record['reason'].fillna('').astype(str).str.strip()
+    else:
+        df_record['reason'] = ''
+    if 'cycle' in df_record.columns:
+        df_record['cycle'] = pd.to_numeric(df_record['cycle'], errors='coerce')
     df_record['date']  = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
     df_record = df_record[df_record['date'] >= START_DATE].copy()
     df_record['price'] = pd.to_numeric(df_record['price'], errors='coerce').fillna(0)
     df_record['share'] = pd.to_numeric(df_record['share'], errors='coerce').fillna(0)
+
+    # 補充股票名稱（優先從 white_list.csv 依 id 對照）
+    wl_path = config.MARKET_DATA_DIR / "white_list.csv"
+    if os.path.exists(wl_path):
+        df_wl = pd.read_csv(wl_path, dtype={'id': str}, encoding='utf-8-sig')
+        name_col = 'nmae' if 'nmae' in df_wl.columns else ('name' if 'name' in df_wl.columns else None)
+        if name_col:
+            name_map = dict(zip(df_wl['id'].astype(str).str.strip(), df_wl[name_col].astype(str).str.strip()))
+            if 'name' not in df_record.columns:
+                df_record['name'] = df_record['id'].astype(str).str.strip().map(name_map).fillna('')
+            else:
+                df_record['name'] = df_record['name'].fillna(df_record['id'].astype(str).str.strip().map(name_map)).fillna('')
+    elif 'name' not in df_record.columns:
+        df_record['name'] = ''
 
     # ── 申購/贖回紀錄（transaction.csv）──
     df_flows = pd.read_csv(file_path_transaction, dtype={'id': str}, encoding='utf-8-sig')
@@ -126,6 +149,10 @@ def calculate_settlement_data(df_record, df_price):
         return [], [], 0, 0
 
     df_trade  = df_record.copy()
+    if 'date' in df_trade.columns:
+        df_trade['date'] = pd.to_datetime(df_trade['date'], errors='coerce')
+    has_multi_year = df_trade['date'].dt.year.nunique() > 1 if 'date' in df_trade.columns else False
+    m_fmt = "'%y/%m月" if has_multi_year else "%m月"
     latest_px = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict() if not df_price.empty else {}
     unrealized_data, realized_data = [], []
 
@@ -141,8 +168,8 @@ def calculate_settlement_data(df_record, df_price):
         total_revenue   = 0.0
         total_sell_cost = 0.0
         last_sell_date  = None
-        last_buy_date   = None
         cycle_start_date = None
+        entry_cycle     = None
         has_trimmed_in_cycle = False
 
         for _, row in sub.iterrows():
@@ -151,6 +178,7 @@ def calculate_settlement_data(df_record, df_price):
                 if cum_shares <= 0.0001:
                     cycle_start_date = row['date']
                     has_trimmed_in_cycle = False
+                    entry_cycle = row['cycle'] if 'cycle' in row and pd.notnull(row['cycle']) else None
                 fee         = int(trade_val * 0.001425)
                 cum_shares += row['share']
                 total_cost += trade_val + fee
@@ -173,7 +201,14 @@ def calculate_settlement_data(df_record, df_price):
                 
                 # 當部位清空時，結算這一輪的交易
                 if cum_shares <= 0.0001:
-                    cycle_str = f"{last_buy_date.strftime('%Y/%m')}" if pd.notnull(last_buy_date) else "未知"
+                    start_dt = cycle_start_date if cycle_start_date is not None else last_buy_date
+                    m_prefix = f"{start_dt.strftime(m_fmt)} " if start_dt is not None and pd.notnull(start_dt) else ""
+                    if entry_cycle is not None and pd.notnull(entry_cycle):
+                        cycle_str = f"{m_prefix}(Cycle {int(entry_cycle)})" if m_prefix else f"Cycle {int(entry_cycle)}"
+                    elif pd.notnull(last_buy_date):
+                        cycle_str = f"{last_buy_date.strftime('%Y/%m')}"
+                    else:
+                        cycle_str = "未知"
                     realized_data.append({
                         "日期":       last_sell_date.strftime("%Y-%m-%d"),
                         "進場週期":   cycle_str,
@@ -190,13 +225,22 @@ def calculate_settlement_data(df_record, df_price):
                     total_sell_cost = 0.0
                     last_sell_date  = None
                     cycle_start_date = None
+                    entry_cycle     = None
                     has_trimmed_in_cycle = False
                 else:
-                    has_trimmed_in_cycle = True
+                    if str(row.get('reason', '')).strip().upper() == 'SL_HALF':
+                        has_trimmed_in_cycle = True
 
         # 迴圈結束後，如果還有未清空的已賣出紀錄 (異常防呆)
         if total_sell_cost > 0 and last_sell_date is not None and cum_shares > 0.0001:
-            cycle_str = f"{last_buy_date.strftime('%Y/%m')}" if pd.notnull(last_buy_date) else "未知"
+            start_dt = cycle_start_date if cycle_start_date is not None else last_buy_date
+            m_prefix = f"{start_dt.strftime(m_fmt)} " if start_dt is not None and pd.notnull(start_dt) else ""
+            if entry_cycle is not None and pd.notnull(entry_cycle):
+                cycle_str = f"{m_prefix}(Cycle {int(entry_cycle)})" if m_prefix else f"Cycle {int(entry_cycle)}"
+            elif pd.notnull(last_buy_date):
+                cycle_str = f"{last_buy_date.strftime('%Y/%m')}"
+            else:
+                cycle_str = "未知"
             realized_data.append({
                 "日期":       last_sell_date.strftime("%Y-%m-%d"),
                 "進場週期":   cycle_str,
@@ -291,85 +335,54 @@ def _check_micro_stage2_stoploss_alerts(unrealized_data, threshold=-20.0):
             )
     return alerts
 
+def get_macro_cycle_stats(df_record: pd.DataFrame, df_history: pd.DataFrame) -> dict:
+    """
+    直接以最新 cycle 計算當前週期的宏觀指標 (高點回撤, 累積報酬, 進場日, 是否已1/4停利)
+    """
+    default_stats = {"macro_dd": 0.0, "macro_roi": 0.0, "entry_date_str": "", "has_tp": False}
+    if df_record.empty or df_history.empty or 'cycle' not in df_record.columns:
+        return default_stats
+
+    curr = df_record[df_record['cycle'] == df_record['cycle'].max()]
+    buys = curr[(curr['action'] == 'buy') & (~curr['id'].str.startswith('cash'))]
+    if buys.empty:
+        return default_stats
+
+    entry_date = buys['date'].min()
+    period = df_history[df_history['date'] >= entry_date]
+    if period.empty:
+        return default_stats
+
+    cur_nav = df_history['total_nav'].iloc[-1]
+    peak_nav = period['total_nav'].max()
+    entry_nav = period['total_nav'].iloc[0]
+
+    return {
+        "macro_dd": min(0.0, (cur_nav / peak_nav - 1.0) * 100) if peak_nav > 0 else 0.0,
+        "macro_roi": (cur_nav / entry_nav - 1.0) * 100 if entry_nav > 0 else 0.0,
+        "entry_date_str": entry_date.strftime('%m/%d'),
+        "has_tp": (curr['reason'] == 'TP_QUARTER').any(),
+    }
+
+
 def calculate_macro_drawdown(df_record: pd.DataFrame, df_history: pd.DataFrame) -> tuple[float, str]:
-    """
-    計算當前週期自最新買進月份以來的宏觀高點回撤 (Macro Drawdown)
-    回傳：(macro_drawdown, entry_date_str)
-    """
-    if df_record.empty or df_history.empty:
-        return 0.0, ""
-
-    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
-    if recent_buys.empty:
-        return 0.0, ""
-
-    # 取最近一次買進的月份，並抓該月份第一筆買進日作為本週期起點
-    latest_month = recent_buys['date'].max().to_period('M')
-    entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
-    entry_date_str = entry_date.strftime('%m/%d')
-
-    # 尋找進場日之後的最高淨值 (作為移動停利/停損的基準)
-    period_df = df_history[df_history['date'] >= entry_date]
-    if period_df.empty:
-        return 0.0, entry_date_str
-
-    peak_nav = period_df['total_nav'].max()
-    current_nav = df_history['total_nav'].iloc[-1]
-    macro_drawdown = (current_nav / peak_nav - 1.0) * 100 if peak_nav > 0 else 0.0
-
-    return min(0.0, macro_drawdown), entry_date_str
+    stats = get_macro_cycle_stats(df_record, df_history)
+    return stats["macro_dd"], stats["entry_date_str"]
 
 
 def calculate_macro_profit(df_record: pd.DataFrame, df_history: pd.DataFrame) -> tuple[float, str, bool]:
-    """
-    計算當前週期自最新買進月份以來的宏觀累積獲利 % 與是否已執行過 1/4 停利
-    回傳：(macro_roi, entry_date_str, has_taken_profit)
-    """
-    if df_record.empty or df_history.empty:
-        return 0.0, "", False
-
-    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
-    if recent_buys.empty:
-        return 0.0, "", False
-
-    latest_month = recent_buys['date'].max().to_period('M')
-    entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
-    entry_date_str = entry_date.strftime('%m/%d')
-
-    # 檢查本週期是否已有 1/4 停利紀錄
-    cycle_records = df_record[df_record['date'] >= entry_date]
-    cycle_sells = cycle_records[cycle_records['action'] == 'sell']
-    has_taken_profit = False
-    for _, row in cycle_sells.iterrows():
-        label_str = str(row.get('label', '')).lower()
-        reason_str = str(row.get('reason', '')).lower()
-        if 'take_profit' in label_str or '停利' in reason_str or '1/4' in reason_str:
-            has_taken_profit = True
-            break
-
-    # 計算自進場日起的總資產報酬率
-    period_df = df_history[df_history['date'] >= entry_date]
-    if period_df.empty:
-        return 0.0, entry_date_str, has_taken_profit
-
-    entry_nav = period_df['total_nav'].iloc[0]
-    current_nav = df_history['total_nav'].iloc[-1]
-    macro_roi = (current_nav / entry_nav - 1.0) * 100 if entry_nav > 0 else 0.0
-
-    return macro_roi, entry_date_str, has_taken_profit
+    stats = get_macro_cycle_stats(df_record, df_history)
+    return stats["macro_roi"], stats["entry_date_str"], stats["has_tp"]
 
 
 def _check_macro_stoploss_alerts(df_record, df_history, threshold=-10.0):
     """
     宏觀總經/投組移動停損警報 (總資產自高點跌 10% 全清倉)
     """
-    if df_record.empty or df_history.empty:
-        return []
-
-    macro_drawdown, entry_date_str = calculate_macro_drawdown(df_record, df_history)
-    if macro_drawdown <= threshold:
+    stats = get_macro_cycle_stats(df_record, df_history)
+    if stats["macro_dd"] <= threshold:
         return [
-            f"宏觀帳戶高點移動停損 ： 觸發 {abs(threshold):.0f}% 移動停損 ， 本週期{entry_date_str}投組高點回撤已達 {macro_drawdown:.1f}% ， 全面清倉"
+            f"宏觀帳戶高點移動停損 ： 觸發 {abs(threshold):.0f}% 移動停損 ， 本週期{stats['entry_date_str']}投組高點回撤已達 {stats['macro_dd']:.1f}% ， 全面清倉"
         ]
     return []
 
@@ -378,13 +391,10 @@ def _check_macro_takeprofit_alerts(df_record, df_history, threshold=10.0):
     """
     宏觀帳戶%數停利警報 (總資產獲利達 10% 砍 1/4 入袋降波動率)
     """
-    if df_record.empty or df_history.empty:
-        return []
-
-    macro_roi, entry_date_str, has_taken_profit = calculate_macro_profit(df_record, df_history)
-    if macro_roi >= threshold and not has_taken_profit:
+    stats = get_macro_cycle_stats(df_record, df_history)
+    if stats["macro_roi"] >= threshold and not stats["has_tp"]:
         return [
-            f"宏觀帳戶停利 ： 本週期{entry_date_str}總資產獲利已達 {macro_roi:.1f}% ， 各檔持股砍 1/4 入袋降低波動率"
+            f"宏觀帳戶停利 ： 本週期{stats['entry_date_str']}總資產獲利已達 {stats['macro_roi']:.1f}% ， 各檔持股砍 1/4 入袋降低波動率"
         ]
     return []
 

@@ -724,4 +724,4 @@ def backtester(
 
 if __name__ == "__main__":
     import sys
-    backtester(version='v51', select_rank=list(range(1, 6)), entry_on_next_open=False)
+    backtester(version='v51', select_rank=list(range(1, 4)), entry_on_next_open=False)

@@ -35,27 +35,22 @@ from fund_stock.administration.update_navpu import update_quant
 from fund_stock.macro_research.market_temper import analyze_market_temper
 
 def sync_database():
-    print('\n\n[1.] 下載 ETF')
+    """從 Supabase 雲端一鍵同步最新行情與淨值，並執行完整性診斷"""
+    print('\n[1.] 下載 ETF 最新報價')
     update_etf()
     
-    print('\n\n[2.] 同步 股市')
+    print('\n[2.] 從雲端同步市場行情 (market.parquet) 與最新淨值 (navpu.csv)')
     sync()
     
-    print('\n\n[3.] 資料庫診斷')
+    print('\n[3.] 資料庫診斷 (檢查是否有缺漏或缺失值)')
     market_ok = diagnose_market()
     if market_ok:
         print("market.parquet 完美無缺漏！")
     else:
-        print("market.parquet 異常!")
-        return f"\n\n資料庫問題，中斷程序。"
+        print("警告：market.parquet 偵測到異常缺漏，請檢查！")
+        return "\n資料庫同步完成，但診斷發現異常缺漏。"
 
-    print('\n\n[4.] 更新基金帳務')
-    update_quant()
-
-    print('\n\n[5.] 備份資料庫')
-    backup()
-
-    return f"\n\n資料庫已全面更新完畢。"
+    return "\n雲端資料庫同步完成，數據檢核無缺漏！"
 
 
 def open_dashboard_fund() -> str:
@@ -165,28 +160,33 @@ def main():
             action_database = questionary.select(
                 "請選擇要執行的資料庫模組：\n",
                 choices=[
-                    "同步與備份資料庫",
+                    "同步資料庫",#(從雲端下載最新行情與淨值，並自動檢核)
                     "更新營收資料庫",
-                    "診斷資料庫",
+                    "診斷資料庫",#(全面檢查缺失值與連續性)
+                    "備份資料庫",#(將本地帳務備份至雲端)
                     "返回主選單"
                 ],
                 qmark="",
                 instruction=" "
             ).ask()
             
-            if action_database == "同步與備份資料庫":
-                print("\n[處理中...]")
+            if action_database and action_database.startswith("同步資料庫"):
+                print("\n[同步中...]")
                 res = sync_database()
-
                 print(f"{res}")
 
             elif action_database == "更新營收資料庫":
-                print("\n[更新中...]")
+                print("\n[更新營收中...]")
                 update_revenue()
 
-            elif action_database == "診斷資料庫":
-                print("\n[診斷中...]")
+            elif action_database and action_database.startswith("診斷資料庫"):
+                print("\n[全面診斷中...]")
                 diagnose_all()
+
+            elif action_database and action_database.startswith("備份資料庫"):
+                print("\n[備份中...]")
+                backup()
+                print("\n本地帳務資料庫已成功備份至雲端！")
 
         elif action_home == "量化模組":
             action_quant = questionary.select(

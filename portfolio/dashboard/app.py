@@ -73,7 +73,7 @@ _CSS = """
 
 _PAGES = {
     " 基金概況": page_subscriber_nav,
-    " 月績效":   page_subscriber_performance,
+    " 週期績效": page_subscriber_performance,
 }
 
 def main():

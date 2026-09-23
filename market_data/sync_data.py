@@ -81,11 +81,11 @@ def sync():
             if os.path.exists(temp_local_market):
                 os.remove(temp_local_market)
 
-    # 2. 下載最新的營收資料 (CSV)
-    # (如果您的營收資料也會交給 GitHub 排程自動更新，請把下面三行取消註解)
-    # remote_revenue = "revenue.csv"
-    # local_revenue = f"{config.MARKET_DATA_DIR}/revenue.csv"
-    # download_from_supabase('stock_data_backup', remote_revenue, local_revenue)
+    # 2. 下載最新基金淨值資料 (navpu.csv)
+    remote_navpu = "navpu.csv"
+    local_navpu = str(config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv")
+    print("\n開始從 Supabase 同步最新基金淨值 (navpu.csv)...")
+    download_from_supabase('stock_data_backup', remote_navpu, local_navpu)
 
 if __name__ == '__main__':
     sync()

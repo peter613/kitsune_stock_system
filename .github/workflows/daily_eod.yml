@@ -1,13 +1,12 @@
-name: Daily Market Scraper
+name: Daily EOD Pipeline
 
 on:
-  # 支援外部定時觸發 (由 cron-job.org 觸發)
   workflow_dispatch:
   repository_dispatch:
-    types: [Daily_Market_Scraper]
+    types: [Daily_Market_Scraper, daily_eod, daily_pipeline]
 
 jobs:
-  scrape-and-update:
+  eod-pipeline:
     runs-on: ubuntu-latest
     
     steps:
@@ -20,19 +19,24 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      # 不使用 pip install -e . 以避開 TA-Lib 的複雜 C++ 編譯問題，
-      # 只安裝爬蟲與上傳所需要的輕量套件
+      # 只安裝爬蟲、結算與風控所需的輕量套件
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas requests python-dotenv supabase pyarrow
 
-      - name: Update Market Data & NAV
+      - name: 1. Update Market Data & NAV
         env:
           GITHUB_ACTIONS: "true"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          DC_WEBHOOK_URL: ${{ secrets.DC_WEBHOOK_URL }}
           DC_DATABASE_WEBHOOK_URL: ${{ secrets.DC_DATABASE_WEBHOOK_URL }}
         run: |
           python github_action/update_data.py
+
+      - name: 2. Evaluate Risk Control
+        env:
+          GITHUB_ACTIONS: "true"
+          DC_RISK_WEBHOOK_URL: ${{ secrets.DC_RISK_WEBHOOK_URL }}
+        run: |
+          python github_action/risk_control.py

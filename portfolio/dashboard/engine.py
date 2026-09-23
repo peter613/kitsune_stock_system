@@ -35,6 +35,41 @@ def load_data():
     df_flows  = _load_flows(config.FUND_STOCK_ADMINISTRATION_DIR)
     return quant_nav, df_flows
 
+@st.cache_data
+def load_cycle_periods() -> pd.DataFrame:
+    """
+    從 journal.csv 讀取每個 cycle 的起始日期與結束日期
+    回傳欄位：cycle (int), cycle_str (str), start_date (Timestamp), end_date (Timestamp), date_range (str)
+    """
+    journal_path = config.STOCK_JOURNAL_DIR / "journal.csv"
+    if not journal_path.exists():
+        return pd.DataFrame()
+    df_j = pd.read_csv(journal_path, encoding='utf-8-sig')
+    if 'cycle' not in df_j.columns or df_j['cycle'].dropna().empty:
+        return pd.DataFrame()
+    df_j['date'] = pd.to_datetime(df_j['date'], errors='coerce').dt.normalize()
+    has_multi_year = df_j['date'].dt.year.nunique() > 1
+    
+    cycles = []
+    for c_id, group in df_j.groupby('cycle'):
+        if pd.isna(c_id):
+            continue
+        c_id = int(c_id)
+        s_date = group['date'].min()
+        e_date = group['date'].max()
+        month_str = s_date.strftime("'%y/%m月") if has_multi_year else s_date.strftime('%m月')
+        cycles.append({
+            'cycle': c_id,
+            'cycle_str': f"Cycle {c_id}",
+            'month_str': month_str,
+            'chart_label': f"{month_str}<br>Cycle {c_id}",
+            'table_label': f"{month_str} (Cycle {c_id})",
+            'start_date': s_date,
+            'end_date': e_date,
+            'date_range': f"{s_date.strftime('%Y/%m/%d')} ~ {e_date.strftime('%Y/%m/%d')}",
+        })
+    return pd.DataFrame(cycles).sort_values('cycle').reset_index(drop=True)
+
 # ──────────────────────────────────────────
 # 模組 2：FundSubscriber — 單一投資者
 # ──────────────────────────────────────────

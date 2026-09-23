@@ -725,8 +725,9 @@ def page_realized(df_record, df_price, df_history):
                 總成本=("總成本", "sum")
             ).reset_index()
             
-            # 排序週期 (確保時間軸順序)
-            cycle_stats = cycle_stats.sort_values("進場週期")
+            # 排序週期 (確保數值順序如 Cycle 0, Cycle 1...)
+            cycle_stats["_cycle_sort_key"] = cycle_stats["進場週期"].str.extract(r'Cycle\s*(\d+)')[0].astype(float)
+            cycle_stats = cycle_stats.sort_values("_cycle_sort_key").drop(columns=["_cycle_sort_key"])
             
             # 計算週期總報酬率
             cycle_stats["週期報酬率"] = (cycle_stats["總已實現損益"] / cycle_stats["總成本"]) * 100
@@ -741,9 +742,17 @@ def page_realized(df_record, df_price, df_history):
                     hover_str += f"{row['名稱']} ({row['代號']}): {row['累積報酬率']}<br>"
                 hover_texts.append(hover_str)
                 
+            # X 軸標籤：將月份置於 Cycle 上方 (例如 03月<br>Cycle 0 或 '26/03月<br>Cycle 0)
+            chart_x = cycle_stats["進場週期"].str.replace(r'(.+?)\s*\(Cycle\s*(\d+)\)', r'\1<br>Cycle \2', regex=True)
+
+            n_bars = len(cycle_stats)
+            default_visible = 8
+            start_idx = max(0, n_bars - default_visible) - 0.5
+            end_idx = n_bars - 0.5
+
             fig_bar = go.Figure(data=[
                 go.Bar(
-                    x=cycle_stats["進場週期"],
+                    x=chart_x,
                     y=cycle_stats["週期報酬率"],
                     marker_color="#4F247E",
                     hovertext=hover_texts,
@@ -753,13 +762,18 @@ def page_realized(df_record, df_price, df_history):
             fig_bar.update_layout(
                 template="plotly_dark",
                 yaxis_title="總報酬率 (%)",
-                xaxis_title="進場週期",
+                xaxis_title="進場月份與週期",
                 margin=dict(t=40, l=10, r=10, b=10),
                 hoverlabel=dict(
                     bgcolor="white",
                     font_size=15,
                     font_family="Arial",
                     font_color="black"
+                ),
+                xaxis=dict(
+                    type='category',
+                    rangeslider=dict(visible=True, thickness=0.08),
+                    range=[start_idx, end_idx],
                 )
             )
             df_re["sort_roi"] = df_re["累積報酬率"].str.replace("%", "").astype(float)

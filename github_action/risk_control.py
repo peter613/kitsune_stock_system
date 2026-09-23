@@ -32,13 +32,9 @@ if env_path.exists():
 
 def send_risk_notify(message: str) -> bool:
     """發送低熵風控警報至指定頻道 (平時安靜，觸發才響)"""
-    webhook_url = (
-        os.environ.get("DC_RISK_WEBHOOK_URL")
-        or os.environ.get("DC_WEBHOOK_URL")
-        or os.environ.get("DC_DATABASE_WEBHOOK_URL")
-    )
+    webhook_url = os.environ.get("DC_RISK_WEBHOOK_URL")
     if not webhook_url:
-        print("[WARN] 未設定 DC_RISK_WEBHOOK_URL / DC_WEBHOOK_URL")
+        print("[WARN] 未設定 DC_RISK_WEBHOOK_URL")
         return False
 
     try:
@@ -52,39 +48,30 @@ def send_risk_notify(message: str) -> bool:
 def run_risk_monitor():
     print("[INFO] Starting Risk Control Evaluation...")
 
-    from market_data.sync_data import download_from_supabase
-
-    # 1. 防呆：確保 config 所定義的本地目錄絕對存在 (解決 GitHub Actions 空目錄問題)
-    config.STOCK_JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-    config.FUND_STOCK_ADMINISTRATION_DIR.mkdir(parents=True, exist_ok=True)
-    config.MARKET_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
     journal_path = config.STOCK_JOURNAL_DIR / "journal.csv"
     navpu_path = config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv"
     market_db_path = config.MARKET_DATA_DIR / "market.parquet"
 
-    # 2. 若本地無 navpu.csv，直接從 Supabase 下載最新備份
-    if not navpu_path.exists():
-        print("[INFO] 本地無 navpu.csv，正在從 Supabase 下載最新版本...")
-        download_from_supabase('stock_data_backup', 'navpu.csv', str(navpu_path))
-
-    # 3. 若本地無 market.parquet，從 Supabase 下載當年市場資料
-    if not market_db_path.exists():
-        current_year = datetime.now().year
-        print(f"[INFO] 本地無 market.parquet，正在從 Supabase 下載 {current_year} 年資料...")
-        download_from_supabase('stock_data_backup', f"market/market_{current_year}.parquet", str(market_db_path))
-
-    if not journal_path.exists() or not navpu_path.exists() or not market_db_path.exists():
-        print("[WARN] 缺少必要檔案 (journal / navpu / market)，略過風控檢查。")
-        return None
-
     try:
-        df_record = pd.read_csv(journal_path, dtype={'id': str})
+        df_record = pd.read_csv(journal_path, dtype={'id': str}, encoding='utf-8-sig')
         df_record.columns = df_record.columns.str.strip().str.lower()
+        if 'cycle' in df_record.columns:
+            df_record['cycle'] = pd.to_numeric(df_record['cycle'], errors='coerce')
         df_record['date'] = pd.to_datetime(df_record['date'], errors='coerce').dt.normalize()
         df_record['price'] = pd.to_numeric(df_record.get('price', 0), errors='coerce').fillna(0)
         df_record['share'] = pd.to_numeric(df_record.get('share', 0), errors='coerce').fillna(0)
         df_record = df_record.sort_values('date')
+
+        # 補充股票名稱（從 white_list.csv 依 id 對照）
+        wl_path = config.MARKET_DATA_DIR / "white_list.csv"
+        if wl_path.exists():
+            df_wl = pd.read_csv(wl_path, dtype={'id': str}, encoding='utf-8-sig')
+            name_col = 'nmae' if 'nmae' in df_wl.columns else ('name' if 'name' in df_wl.columns else None)
+            if name_col:
+                name_map = dict(zip(df_wl['id'].astype(str).str.strip(), df_wl[name_col].astype(str).str.strip()))
+                df_record['name'] = df_record['id'].astype(str).str.strip().map(name_map).fillna('')
+        if 'name' not in df_record.columns:
+            df_record['name'] = ''
 
         df_history = pd.read_csv(navpu_path)
         df_history['date'] = pd.to_datetime(df_history['date'], errors='coerce').dt.normalize()
@@ -126,7 +113,7 @@ def run_risk_monitor():
                 if cum_shares <= 0.0001:
                     cycle_start_date = None
                     has_trimmed = False
-                else:
+                elif str(row.get('reason', '')).strip().upper() == 'SL_HALF':
                     has_trimmed = True
 
         if cum_shares > 0.0001:
@@ -147,33 +134,22 @@ def run_risk_monitor():
     today_str = datetime.now().strftime("%Y-%m-%d")
     latest_px_map = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict()
 
-    # 2. 宏觀帳戶總資產回撤與獲利計算
-    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
-    latest_month = recent_buys['date'].max().to_period('M')
-    entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
+    # 2. 宏觀帳戶總資產回撤與獲利計算（直接以最新 cycle 判斷）
+    curr = df_record[df_record['cycle'] == df_record['cycle'].max()]
+    buys = curr[(curr['action'] == 'buy') & (~curr['id'].str.startswith('cash'))]
+    entry_date = buys['date'].min() if not buys.empty else df_record['date'].max()
     entry_date_str = entry_date.strftime('%m/%d') if pd.notnull(entry_date) else ""
+    has_taken_macro_profit = (curr['reason'] == 'TP_QUARTER').any()
 
     period_df = df_history[df_history['date'] >= entry_date]
     if not period_df.empty:
         peak_nav = period_df['total_nav'].max()
         entry_nav = period_df['total_nav'].iloc[0]
         cur_nav = df_history['total_nav'].iloc[-1]
-        macro_drawdown = ((cur_nav / peak_nav) - 1.0) * 100 if peak_nav > 0 else 0.0
+        macro_drawdown = min(0.0, ((cur_nav / peak_nav) - 1.0) * 100) if peak_nav > 0 else 0.0
         macro_roi = ((cur_nav / entry_nav) - 1.0) * 100 if entry_nav > 0 else 0.0
     else:
-        macro_drawdown = 0.0
-        macro_roi = 0.0
-
-    # 檢查本週期是否已有 1/4 停利紀錄
-    cycle_records = df_record[df_record['date'] >= entry_date]
-    cycle_sells = cycle_records[cycle_records['action'] == 'sell']
-    has_taken_macro_profit = False
-    for _, row in cycle_sells.iterrows():
-        l_str = str(row.get('label', '')).lower()
-        r_str = str(row.get('reason', '')).lower()
-        if 'take_profit' in l_str or '停利' in r_str or '1/4' in r_str:
-            has_taken_macro_profit = True
-            break
+        macro_drawdown, macro_roi = 0.0, 0.0
 
     # 3. 個股微觀回撤與停損計算
     stage2_stocks = []
@@ -214,13 +190,12 @@ def run_risk_monitor():
     # 1. 宏觀帳戶高點移動停損 (總資產自高點跌 10% 全清倉)
     if macro_drawdown <= -10.0:
         clean_lines = [
-            "台股風控紀律報告",
+            "台股風控通知",
             f"日期：{today_str}",
-            "狀態：觸發風控",
+            "狀態：宏觀帳戶高點移動停損 (門檻 -10.0%)",
             "",
-            "‧ 觸發項目：宏觀帳戶高點移動停損",
-            f"‧ 數據指標：本週期({entry_date_str})總資產自高點回撤已達 {macro_drawdown:.1f}% (門檻 -10.0%)，累積報酬 {macro_roi:+.1f}%",
-            "‧ 執行動作：全面清倉 (所有持倉股票 100% 賣出清空)",
+            f"‧ 本週期({entry_date_str})總資產自高點回撤已達 {macro_drawdown:.1f}%",
+            " - **全面清倉**",
         ]
         for h in active_holdings:
             clean_lines.append(f"  - {h['code']} {h['name']}：全數賣出 {h['shares']} 股")
@@ -231,17 +206,17 @@ def run_risk_monitor():
     # 2. 微觀個股第二階段移動停損 (高點回撤 20% 全清倉)
     elif stage2_stocks:
         clean_lines = [
-            "台股風控紀律報告",
+            "台股風控通知",
             f"日期：{today_str}",
-            "狀態：觸發風控",
+            "狀態：微觀個股第二階段移動停損 (門檻 -20.0%)",
             "",
-            "‧ 觸發項目：微觀個股第二階段移動停損",
         ]
         for s in stage2_stocks:
             clean_lines.append(
                 f"‧ 標的：{s['code']} {s['name']}\n"
-                f"  - 數據：現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})，高點回撤 {s['dd_pct']:.1f}% (門檻 -20.0%)\n"
-                f"  - 動作：全數賣出 {s['shares']} 股 (清倉 100%)"
+                f" - 高點回撤 {s['dd_pct']:.1f}%)\n"
+                f" - 數據：現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})"
+                f" - **賣出** {s['shares']} 股"
             )
         send_risk_notify("\n".join(clean_lines))
         return "STAGE2_STOPLOSS"
@@ -249,18 +224,18 @@ def run_risk_monitor():
     # 3. 微觀個股第一階段移動減碼 (高點回撤 10% 砍半 50%)
     elif stage1_stocks:
         clean_lines = [
-            "台股風控紀律報告",
+            "台股風控通知",
             f"日期：{today_str}",
-            "狀態：觸發風控",
+            "狀態：微觀個股第一階段移動減碼(門檻 -10.0%)",
             "",
-            "‧ 觸發項目：微觀個股第一階段移動減碼",
         ]
         for s in stage1_stocks:
             trim_shares = int(s['shares'] * 0.5)
             clean_lines.append(
                 f"‧ 標的：{s['code']} {s['name']}\n"
-                f"  - 數據：現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})，高點回撤 {s['dd_pct']:.1f}% (門檻 -10.0%)\n"
-                f"  - 動作：賣出 {trim_shares} 股 (砍半 50%)"
+                f" - 高點回撤 {s['dd_pct']:.1f}%)\n"
+                f" - 現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})"
+                f" - **賣出** {trim_shares} 股"
             )
         send_risk_notify("\n".join(clean_lines))
         return "STAGE1_STOPLOSS"
@@ -268,13 +243,12 @@ def run_risk_monitor():
     # 4. 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
     elif macro_roi >= 10.0 and not has_taken_macro_profit:
         clean_lines = [
-            "台股風控紀律報告",
+            "台股風控通知",
             f"日期：{today_str}",
-            "狀態：觸發風控",
+            "狀態：宏觀帳戶停利  (門檻 +10.0%)",
             "",
-            "‧ 觸發項目：宏觀帳戶%數停利",
-            f"‧ 數據指標：本週期({entry_date_str})總資產獲利已達 {macro_roi:+.1f}% (門檻 +10.0%)",
-            "‧ 執行動作：各檔持股砍 1/4 (25%) 獲利入袋降低波動率",
+            f"‧ 本週期({entry_date_str})總資產獲利已達 {macro_roi:+.1f}%",
+            " - **各檔持股砍 1/4 獲利入袋降低波動率**",
         ]
         for h in active_holdings:
             quarter = int(h['shares'] * 0.25)
