@@ -274,7 +274,7 @@ def _check_micro_stage1_stoploss_alerts(unrealized_data, threshold=-10.0, stage2
 
         if max_loss <= threshold:
             alerts.append(
-                f"【指令 : 滅止 】觸發 {abs(threshold):.0f}% 微觀移動停損 ， {item['代號']} {item['名稱']} 砍半倉，高點回撤已達 {dd_float:.1f}%"
+                f"微觀個股第一階段移動減碼 ： 觸發 {abs(threshold):.0f}% 移動停損 ， {item['代號']} {item['名稱']} 砍半倉，高點回撤已達 {dd_float:.1f}%"
             )
     return alerts
 
@@ -287,7 +287,7 @@ def _check_micro_stage2_stoploss_alerts(unrealized_data, threshold=-20.0):
 
         if max_loss <= threshold:
             alerts.append(
-                f"【指令 : 滅止 】觸發 {abs(threshold):.0f}% 微觀移動停損 ， {item['代號']} {item['名稱']} 砍全倉，高點回撤已達 {dd_float:.1f}%"
+                f"微觀個股第二階段移動停損 ： 觸發 {abs(threshold):.0f}% 移動停損 ， {item['代號']} {item['名稱']} 砍全倉，高點回撤已達 {dd_float:.1f}%"
             )
     return alerts
 
@@ -320,9 +320,48 @@ def calculate_macro_drawdown(df_record: pd.DataFrame, df_history: pd.DataFrame) 
     return min(0.0, macro_drawdown), entry_date_str
 
 
+def calculate_macro_profit(df_record: pd.DataFrame, df_history: pd.DataFrame) -> tuple[float, str, bool]:
+    """
+    計算當前週期自最新買進月份以來的宏觀累積獲利 % 與是否已執行過 1/4 停利
+    回傳：(macro_roi, entry_date_str, has_taken_profit)
+    """
+    if df_record.empty or df_history.empty:
+        return 0.0, "", False
+
+    recent_buys = df_record[(df_record['action'] == 'buy') & (~df_record['id'].str.startswith('cash'))]
+    if recent_buys.empty:
+        return 0.0, "", False
+
+    latest_month = recent_buys['date'].max().to_period('M')
+    entry_date = recent_buys[recent_buys['date'].dt.to_period('M') == latest_month]['date'].min()
+    entry_date_str = entry_date.strftime('%m/%d')
+
+    # 檢查本週期是否已有 1/4 停利紀錄
+    cycle_records = df_record[df_record['date'] >= entry_date]
+    cycle_sells = cycle_records[cycle_records['action'] == 'sell']
+    has_taken_profit = False
+    for _, row in cycle_sells.iterrows():
+        label_str = str(row.get('label', '')).lower()
+        reason_str = str(row.get('reason', '')).lower()
+        if 'take_profit' in label_str or '停利' in reason_str or '1/4' in reason_str:
+            has_taken_profit = True
+            break
+
+    # 計算自進場日起的總資產報酬率
+    period_df = df_history[df_history['date'] >= entry_date]
+    if period_df.empty:
+        return 0.0, entry_date_str, has_taken_profit
+
+    entry_nav = period_df['total_nav'].iloc[0]
+    current_nav = df_history['total_nav'].iloc[-1]
+    macro_roi = (current_nav / entry_nav - 1.0) * 100 if entry_nav > 0 else 0.0
+
+    return macro_roi, entry_date_str, has_taken_profit
+
+
 def _check_macro_stoploss_alerts(df_record, df_history, threshold=-10.0):
     """
-    宏觀總經/投組移動停損警報
+    宏觀總經/投組移動停損警報 (總資產自高點跌 10% 全清倉)
     """
     if df_record.empty or df_history.empty:
         return []
@@ -330,7 +369,22 @@ def _check_macro_stoploss_alerts(df_record, df_history, threshold=-10.0):
     macro_drawdown, entry_date_str = calculate_macro_drawdown(df_record, df_history)
     if macro_drawdown <= threshold:
         return [
-            f"【指令 : 熔毀 】觸發 {abs(threshold):.0f}% 宏觀移動停損 ， 本週期{entry_date_str}投組高點回撤已達 {macro_drawdown:.1f}%"
+            f"宏觀帳戶高點移動停損 ： 觸發 {abs(threshold):.0f}% 移動停損 ， 本週期{entry_date_str}投組高點回撤已達 {macro_drawdown:.1f}% ， 全面清倉"
+        ]
+    return []
+
+
+def _check_macro_takeprofit_alerts(df_record, df_history, threshold=10.0):
+    """
+    宏觀帳戶%數停利警報 (總資產獲利達 10% 砍 1/4 入袋降波動率)
+    """
+    if df_record.empty or df_history.empty:
+        return []
+
+    macro_roi, entry_date_str, has_taken_profit = calculate_macro_profit(df_record, df_history)
+    if macro_roi >= threshold and not has_taken_profit:
+        return [
+            f"宏觀帳戶停利 ： 本週期{entry_date_str}總資產獲利已達 {macro_roi:.1f}% ， 各檔持股砍 1/4 入袋降低波動率"
         ]
     return []
 
@@ -344,7 +398,7 @@ def _check_bear_market_alerts(df_0050, threshold=-0.20):
         return []
     drawdown = (latest_price - max_price) / max_price
     if drawdown <= threshold:
-        return [f"【指令 : 凜冬 】 正式進入熊市，全面砍倉 ， 大盤已從高點回撤 {drawdown*100:.1f}%"]
+        return [f"大盤熊市通知 ： 正式進入熊市，全面砍倉 ， 大盤已從高點回撤 {drawdown*100:.1f}%"]
     return []
 
 
@@ -362,6 +416,7 @@ def generate_system_alerts(df_record, df_price, df_0050, unrealized_data, df_his
         alerts.extend(_check_micro_stage2_stoploss_alerts(unrealized_data))
         if df_history is not None:
             alerts.extend(_check_macro_stoploss_alerts(df_record, df_history))
+            alerts.extend(_check_macro_takeprofit_alerts(df_record, df_history))
 
     return alerts
 

@@ -201,7 +201,7 @@ def run_delay_eval(version, select_rank, delay_days):
     }
 
 if __name__ == "__main__":
-    VERSION     = 'v46'
+    VERSION     = 'v51'
     SELECT_RANK = list(range(1, 4))
 
     results = []

@@ -34,4 +34,4 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DATES_TO_FIX: ${{ inputs.dates_to_fix }}
         run: |
-          python github_action/run_backfill.py
+          python github_action/backfill.py

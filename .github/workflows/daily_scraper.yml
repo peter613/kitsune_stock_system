@@ -27,14 +27,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests python-dotenv supabase pyarrow
 
-      - name: Run Daily Scraper
+      - name: Update Market Data & NAV
         env:
-          # 告訴程式這是在 GitHub 執行，啟動正確的防呆下載邏輯
           GITHUB_ACTIONS: "true"
-          
-          # 將 GitHub Secrets 注入環境變數
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DC_WEBHOOK_URL: ${{ secrets.DC_WEBHOOK_URL }}
+          DC_DATABASE_WEBHOOK_URL: ${{ secrets.DC_DATABASE_WEBHOOK_URL }}
         run: |
-          python github_action/main.py
+          python github_action/update_data.py

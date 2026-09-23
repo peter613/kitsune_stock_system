@@ -223,4 +223,4 @@ def bt_analysis(version='v27', top_n=3):
     plot_score_distribution(test_df, version=version, top_n=top_n)
 
 if __name__ == '__main__':
-    bt_analysis(version='v48', top_n=3)
+    bt_analysis(version='v51', top_n=3)

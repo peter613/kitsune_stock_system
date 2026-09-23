@@ -37,7 +37,7 @@ FEATURE_COLS = [
 
     # K 線形態結構 (當沖拋壓 vs 主力護盤)
     "upper_ratio_20",
-    #"lower_ratio_20",
+    "lower_ratio_20",
 ]
 
 
@@ -122,7 +122,7 @@ def compute_technical_features(group):
 
     # 下影線佔比 (主力盤中下檔承接力，殺下去強拉回): min(open, close) - low
     lower_shadow = np.minimum(open_p, close) - low
-    #lower_ratio_20 = SMA(lower_shadow / rng, timeperiod=20)
+    lower_ratio_20 = SMA(lower_shadow / rng, timeperiod=20)
 
     # ── 一次性寫回 DataFrame ──────────────────────────────
     group = group.copy()
@@ -142,7 +142,7 @@ def compute_technical_features(group):
         'vol_surge': vol_surge,
         'vol_surge_signed': vol_surge_signed,
         'upper_ratio_20': upper_ratio_20,
-        #'lower_ratio_20': lower_ratio_20,
+        'lower_ratio_20': lower_ratio_20,
         'return_20d': return_20d,
     }
     for col, arr in cols.items():

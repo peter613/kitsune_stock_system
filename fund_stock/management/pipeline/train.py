@@ -17,4 +17,4 @@ def create_training(version='v51', years_10=True, stock_filter=True):
 
 
 if __name__ == "__main__":
-    create_training(version='v51', years_10=True, stock_filter=True)
+    create_training(version='v52', years_10=True, stock_filter=True)
