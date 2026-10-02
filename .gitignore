@@ -19,7 +19,6 @@ sandbox/
 !**/white_list.csv
 !**/journal.csv
 !**/transaction.csv
-!**/navpu.csv
 *.parquet
 *.png
 *.cbm

@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import config
 
 from fund_stock.management.dashboard.engine import (
     calculate_settlement_data,
@@ -594,13 +595,14 @@ def page_unrealized(df_record, df_price, df_history):
         st.dataframe(df_un_display, width='stretch', hide_index=True)
 
         #這裡是k線，不要可以註解
+        """
         st.markdown("---")
         st.markdown("### 持倉個股走勢 (近20日)")
         
         @st.cache_data(show_spinner=False)
         def load_local_market_data():
             try:
-                df = pd.read_parquet('c:/Users/Lynn610/Documents/_kitsune_Stock_System/market_data/data/market.parquet')
+                df = pd.read_parquet(config.MARKET_DATA_DIR / "market.parquet")
                 df['date'] = pd.to_datetime(df['date'])
                 df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False)
                 return df
@@ -668,6 +670,7 @@ def page_unrealized(df_record, df_price, df_history):
                     st.plotly_chart(fig, width='stretch')
                 else:
                     st.warning("本地資料庫找不到此股票的歷史資料。")
+        """
     else:
         st.info("目前投組全數持有現金（空倉防禦狀態），無任何持倉股票")
 

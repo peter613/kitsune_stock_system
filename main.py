@@ -58,7 +58,7 @@ def open_dashboard_fund() -> str:
     print("啟動基金儀表板...")
     # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
 
-    target_path = r"C:\Users\Lynn610\Documents\_kitsune_stock_system"
+    target_path = str(config.BASE_DIR)
 
     cmd = (
         f'start /D "{target_path}" cmd /k '
@@ -74,7 +74,7 @@ def open_dashboard_port() -> str:
     print("啟動投組儀表板...")
     # /k 代表執行完後保持視窗開啟 (方便 Debug)，若要啟動後自動關閉視窗可改為 /c
 
-    target_path = r"C:\Users\Lynn610\Documents\_kitsune_stock_system"
+    target_path = str(config.BASE_DIR)
 
     cmd = (
         f'start /D "{target_path}" cmd /k '

@@ -363,9 +363,10 @@ def get_macro_cycle_stats(df_record: pd.DataFrame, df_history: pd.DataFrame) -> 
     if period.empty:
         return default_stats
 
-    cur_nav = df_history['total_nav'].iloc[-1]
-    peak_nav = period['total_nav'].max()
-    entry_nav = period['total_nav'].iloc[0]
+    nav_col = 'nav_per_unit' if 'nav_per_unit' in df_history.columns else 'total_nav'
+    cur_nav = df_history[nav_col].iloc[-1]
+    peak_nav = period[nav_col].max()
+    entry_nav = period[nav_col].iloc[0]
 
     return {
         "macro_dd": min(0.0, (cur_nav / peak_nav - 1.0) * 100) if peak_nav > 0 else 0.0,
