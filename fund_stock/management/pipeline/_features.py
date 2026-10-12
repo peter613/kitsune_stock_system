@@ -16,6 +16,13 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 import config
 
 # =====================================================================
+# 【核心開關】特徵計算是否使用還原股價？
+# False = 使用未還原市價
+# True  = 使用還原股價
+# =====================================================================
+USE_ADJUSTED_PRICE = True
+
+# =====================================================================
 # 單一真實來源 (Single Source of Truth)
 # 全專案唯一特徵清單：增減特徵只要在此修改，模型自動同步！
 # =====================================================================
@@ -23,21 +30,19 @@ FEATURE_COLS = [
     # 趨勢強度
     "kama", "adx",
 
-    # 大盤濾網與生態 (Tech Market Breadth)
+    # 大盤濾網與生態
     "market_kama_mean", "market_adx_mean",
 
-    # 動能排名與量能
-    "vol_surge_signed", "hist_return_60",
+    # 動能排名與量能 
+    "vol_surge_3",  "box_rs_interact",#"rs_rank_60",
 
     # 基本面
     "yoy", "rev_breakout_12", "rev_bias_3",
 
     # 位階
-    "breakout_200", "resistance_20", "support_20",
-
-    # K 線形態結構 (當沖拋壓 vs 主力護盤)
-    "upper_ratio_20",
-    "lower_ratio_20",
+    "breakout_200", "resistance_20", #"box_width", #"support_20",
+    # K 線形態結構 (波段拋壓 vs 主力波段防守)
+    "lower_ratio_20", #"upper_ratio_20", 
 ]
 
 
@@ -45,7 +50,7 @@ def compute_technical_features(group):
     """
     純個股技術指標與報酬計算算子 (向量化加速)
     """
-    open_p      = group['open'].values.astype(float)
+    open      = group['open'].values.astype(float)
     close       = group['close'].values.astype(float)
     high        = group['high'].values.astype(float)
     low         = group['low'].values.astype(float)
@@ -53,11 +58,10 @@ def compute_technical_features(group):
     amount      = group['amount'].values.astype(float)
     trust_net   = group['Trust_Net'].values.astype(float)
     foreign_net = group['Foreign_Net'].values.astype(float)
-    etf_close   = group['etf_close'].values.astype(float) if 'etf_close' in group else np.full(len(close), np.nan)
 
-    # ── 均線 ──────────────────────────────────────────────
-    sma60 = close / (SMA(close, timeperiod=60) + 1e-9)
-    sma120 = close / (SMA(close, timeperiod=120) + 1e-9)
+    # ── 近 3 日 K 線實體推升均值 (捕捉連續推進攻擊，濾除跳空虛胖) ──
+    body_1d = (close - open) / (open + 1e-9)
+    body_mean_3 = SMA(body_1d, timeperiod=3)
 
     # ── 個股 KAMA ─────────────────────────────────────────
     try:
@@ -66,7 +70,8 @@ def compute_technical_features(group):
         kama = np.full(len(close), np.nan)
 
     # ── 技術指標 ──────────────────────────────────────────
-    adx = ADX(high, low, close, timeperiod=14)
+    adx = ADX(high, low, close, timeperiod=20)
+    atr = close / (ATR(high, low, close, timeperiod=20) + 1e-9)
 
     # ── 成交值 ───────────────────────────────────────────
     amount_ln = np.log1p(amount)
@@ -85,19 +90,18 @@ def compute_technical_features(group):
     resistance_20 = close / (box_res_20 + 1e-9)
     # 距離近期地板多遠？ (接近1 代表回踩支撐)
     support_20 = close / (box_sup_20 + 1e-9)
+    # 寬度
+    box_width = (MAX(high, timeperiod=20) - MIN(low, timeperiod=20)) / (close + 1e-9)
+
+    # ── 動能與量能 (起漲黑馬爆發力 - 近 3 日均量持續放量，過濾隔日沖假突破) ─────────
+    vol_sma_20 = SMA(volume, timeperiod=20)
+    vol_sma_3 = SMA(volume, timeperiod=3)
+    vol_surge_3 = vol_sma_3 / (vol_sma_20 + 1e-9)
 
     # ── 法人籌碼 ──────────────────────────────────────────
-    trust_period = 10
-    is_zero_array = np.where(trust_net == 0, 1.0, 0.0)
-    zero_days_in_period = SMA(is_zero_array, trust_period) * trust_period
-    trust_in = np.where(zero_days_in_period >= 7, 0.0, 1.0)
+    trust_ratio = trust_net / (vol_sma_20 + 1e-9)
 
-    # ── 波動與量能 ───────────────────────────────────────
-    vol_sma_20 = SMA(volume, timeperiod=20)
-    vol_surge = volume / (vol_sma_20 + 1e-9)
-    vol_surge_signed = volume / (vol_sma_20 + 1e-9) * np.where((trust_net + foreign_net) > 0, 1.0, -1.0)
-
-    # ── 計算 20 日實際報酬 (預測標籤用) ───────────────────
+    # ── 計算 20 日實際報酬 (預測標籤用：純淨 Close-to-Close 消除隔夜開盤噪音) ────
     close_shifted = np.empty(len(close))
     close_shifted[:-20] = close[20:]
     close_shifted[-20:] = np.nan
@@ -114,14 +118,12 @@ def compute_technical_features(group):
     close_past_60[:60] = np.nan
     hist_return_60 = (close / (close_past_60 + 1e-9)) - 1
 
-    # ── 20日 K 線影線結構 (當沖拋壓 vs 主力護盤吸籌) ─────────
-    rng = (high - low) + 1e-9
-    # 上影線佔比 (當沖客獲利倒貨壓力，衝高但守不住): high - max(open, close)
-    upper_shadow = high - np.maximum(open_p, close)
-    upper_ratio_20 = SMA(upper_shadow / rng, timeperiod=20)
 
-    # 下影線佔比 (主力盤中下檔承接力，殺下去強拉回): min(open, close) - low
-    lower_shadow = np.minimum(open_p, close) - low
+    # ── 20日 K 線影線結構 (波段拋壓 vs 主力波段防守吸籌) ──────
+    rng = (high - low) + 1e-9
+    upper_shadow = high - np.maximum(open, close)
+    upper_ratio_20 = SMA(upper_shadow / rng, timeperiod=20)
+    lower_shadow = np.minimum(open, close) - low
     lower_ratio_20 = SMA(lower_shadow / rng, timeperiod=20)
 
     # ── 一次性寫回 DataFrame ──────────────────────────────
@@ -129,21 +131,21 @@ def compute_technical_features(group):
     cols = {
         'kama': kama,
         'adx': adx,
-        'sma60': sma60,
-        'sma120': sma120,
+        'atr': atr,
         'amount_20': amount_20,
         'amount_ema_20': amount_ema_20,
         'breakout_200': breakout_200,
         'resistance_20': resistance_20,
         'support_20': support_20,
-        'trust_in': trust_in,
+        'box_width': box_width,
+        'trust_ratio': trust_ratio,
         'hist_return_20': hist_return_20,
         'hist_return_60': hist_return_60,
-        'vol_surge': vol_surge,
-        'vol_surge_signed': vol_surge_signed,
+        'vol_surge_3': vol_surge_3,
         'upper_ratio_20': upper_ratio_20,
         'lower_ratio_20': lower_ratio_20,
         'return_20d': return_20d,
+        'body_mean_3': body_mean_3,
     }
     for col, arr in cols.items():
         group[col] = arr
@@ -211,6 +213,38 @@ def build_dataset(mode='train', version='v51', stock_filter=True, years_10=True,
     print(f"[{mode.upper()}] 正在載入資料庫並執行型態淨化 ({desc})...")
     df = pd.read_parquet(config.MARKET_DATA_DIR / 'market.parquet')
     df_revenue = pd.read_csv(config.MARKET_DATA_DIR / 'revenue.csv', encoding='utf-8', dtype={'id': str})
+    
+    # 讀取並縫合還原股價 (TEJ) - 受 USE_ADJUSTED_PRICE 開關控制
+    adj_path = config.MARKET_DATA_DIR / 'market_adj.parquet'
+    if USE_ADJUSTED_PRICE and os.path.exists(adj_path):
+        print(f"[{mode.upper()}] 已開啟還原股價模式 (USE_ADJUSTED_PRICE=True)")
+        df_adj = pd.read_parquet(adj_path)
+        df_adj = df_adj.rename(columns={'open_adj': 'open', 'high_adj': 'high', 'low_adj': 'low', 'close_adj': 'close'})
+        df['id'] = df['id'].astype(str).str.zfill(4)
+        df_adj['id'] = df_adj['id'].astype(str).str.zfill(4)
+        df['date'] = pd.to_datetime(df['date'])
+        df_adj['date'] = pd.to_datetime(df_adj['date'])
+        
+        # 保留原本未還原價格作為備用基底
+        df = df.rename(columns={
+            'open': 'raw_open',
+            'high': 'raw_high',
+            'low': 'raw_low',
+            'close': 'raw_close'
+        })
+        
+        # 改為 left merge，保留所有最新交易日
+        df = pd.merge(df, df_adj, on=['id', 'date'], how='left')
+        
+        # 未來新日期若 df_adj 尚未收錄，自動以真實價格無縫填補
+        df['open'] = df['open'].fillna(df['raw_open'])
+        df['high'] = df['high'].fillna(df['raw_high'])
+        df['low'] = df['low'].fillna(df['raw_low'])
+        df['close'] = df['close'].fillna(df['raw_close'])
+        
+        df = df.drop(columns=['raw_open', 'raw_high', 'raw_low', 'raw_close'])
+    else:
+        print(f"[{mode.upper()}] 使用未還原市價模式 (USE_ADJUSTED_PRICE={USE_ADJUSTED_PRICE})")
 
     # 時間與 ID 格式標準化
     df['date'] = pd.to_datetime(df['date'])
@@ -319,12 +353,13 @@ def build_dataset(mode='train', version='v51', stock_filter=True, years_10=True,
         final_predict_df["amount_rank"] = final_predict_df["amount_20"].rank(pct=True)
         final_predict_df["rs_rank_20"] = final_predict_df["hist_return_20"].rank(pct=True)
         final_predict_df["rs_rank_60"] = final_predict_df["hist_return_60"].rank(pct=True)
+        final_predict_df["box_rs_interact"] = final_predict_df["rs_rank_60"] / (final_predict_df["box_width"] + 0.05)
 
         for col in ['mom', 'yoy', 'yoy_mean_3']:
             if col in final_predict_df.columns:
                 final_predict_df[col] = final_predict_df[col].clip(lower=-100.0, upper=100.0)
 
-        print("執行EMA成交值流動性過濾 (保留Top 1/3)...")
+        print("EMA成交值流動性過濾 (保留Top 1/3)...")
         final_predict_df["day_count"] = len(final_predict_df)
         final_predict_df["liq_rank"] = final_predict_df["amount_ema_20"].rank(ascending=False, method='min')
         final_predict_df = final_predict_df[final_predict_df["liq_rank"] <= (final_predict_df["day_count"] / 3)].copy()
@@ -362,7 +397,7 @@ def build_dataset(mode='train', version='v51', stock_filter=True, years_10=True,
 
         final_df = df[df['date'].isin(trade_dates_map['actual_date'].dropna().unique())].copy()
 
-        print("執行EMA成交值流動性過濾 (保留Top 1/3)...")
+        print("EMA成交值流動性過濾 (保留Top 1/3)...")
         final_df['liq_rank'] = final_df.groupby('date')['amount_ema_20'].rank(ascending=False, method='min')
         final_df['day_count'] = final_df.groupby('date')['id'].transform('count')
         final_df = final_df[final_df['liq_rank'] <= (final_df['day_count'] / 3)].copy()
@@ -371,6 +406,7 @@ def build_dataset(mode='train', version='v51', stock_filter=True, years_10=True,
         final_df['amount_rank'] = final_df.groupby('date')['amount_20'].rank(pct=True)
         final_df['rs_rank_20'] = final_df.groupby('date')['hist_return_20'].rank(pct=True)
         final_df['rs_rank_60'] = final_df.groupby('date')['hist_return_60'].rank(pct=True)
+        final_df['box_rs_interact'] = final_df['rs_rank_60'] / (final_df['box_width'] + 0.05)
 
         growth_cols = ['mom', 'yoy', 'yoy_mean_3']
         for col in growth_cols:

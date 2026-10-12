@@ -215,7 +215,11 @@ def plot_score_distribution(test_df, version='v27', top_n=3):
     print(f"分數柱狀圖已存檔: {plot_file}")
 
 def bt_analysis(version='v27', top_n=3):
-    file_path = config.get_version_dir(config.STOCK_BACKTEST_TRADELOG_DIR, version) / "trade_log_rank_1_2_3.csv"
+    rank_str = '_'.join(str(i) for i in range(1, top_n + 1))
+    log_dir = config.get_version_dir(config.STOCK_BACKTEST_TRADELOG_DIR, version)
+    file_path = log_dir / f"trade_log_rank_{rank_str}.csv"
+    if not file_path.exists():
+        file_path = log_dir / "trade_log_rank_1_2_3.csv"
     test_df = pd.read_csv(file_path, encoding='utf-8-sig')
     rank_skewness(test_df, top_n=top_n)
     port_returns, mean_ret, std_ret, skewness_value = portfolio_skewness(test_df, top_n=top_n, version=version)
@@ -223,4 +227,4 @@ def bt_analysis(version='v27', top_n=3):
     plot_score_distribution(test_df, version=version, top_n=top_n)
 
 if __name__ == '__main__':
-    bt_analysis(version='v51', top_n=3)
+    bt_analysis(version='v60', top_n=3)

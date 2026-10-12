@@ -86,7 +86,7 @@ def create_cbm(version=None):
     # 6. 訓練模型
     model = CatBoostRanker(
         iterations=6000,
-        learning_rate=0.001,
+        learning_rate=0.005,#原本0.001
         depth=5,#原本5
         loss_function='YetiRank',
         eval_metric='NDCG:top=5',
@@ -115,4 +115,4 @@ def create_cbm(version=None):
     plot_shap_values(model,test_pool,test_df,feature_cols,version)
 
 if __name__ == "__main__":
-    create_cbm(version='v52')
+    create_cbm(version='v60')

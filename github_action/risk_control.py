@@ -2,11 +2,10 @@
 github_action/risk_control.py
 小狐狸量化 — 風控紀律巡檢中心
 
-四大風控紀律 (100% 忠實對齊 simulator.py)：
-  1. 微觀個股第一階段移動減碼 (高點回撤 10% 砍半 50%)
-  2. 微觀個股第二階段移動停損 (高點回撤 20% 全清倉)
-  3. 宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
-  4. 宏觀帳戶%數停利 (總資產/單位淨值獲利達 10% 砍 1/4 入袋降波動率)
+三大風控紀律 (100% 忠實對齊 simulator.py)：
+  1. 宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
+  2. 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
+  3. 宏觀帳戶%數停利 (總資產/單位淨值獲利達 10% 砍 1/4 入袋降波動率)
 
 通報原則 (極致低熵，無 Emoji，結構比照資料庫報告)：
   - 觸發時：發送結構化純文字報告至風控頻道，指明確切動作與股數。
@@ -166,7 +165,6 @@ def run_risk_monitor():
 
     # 3. 個股微觀回撤與停損計算
     stage2_stocks = []
-    stage1_stocks = []
     missing_price_stocks = []
 
     for h in active_holdings:
@@ -175,7 +173,6 @@ def run_risk_monitor():
         cost = h["cost"]
         shares = h["shares"]
         start_d = h["entry_date"]
-        has_trimmed = h["has_trimmed"]
 
         if code not in latest_px_map:
             missing_price_stocks.append(f"{code} {name}")
@@ -190,19 +187,15 @@ def run_risk_monitor():
         dd_pct = min(0.0, ((cur_price / peak_price) - 1.0) * 100) if peak_price > 0 else 0.0
         max_loss = min(dd_pct, roi_pct)
 
+        # 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
         if max_loss <= -20.0:
             stage2_stocks.append({
                 "code": code, "name": name, "shares": shares, "cur_price": cur_price,
                 "cost": cost, "dd_pct": dd_pct, "peak_price": peak_price
             })
-        elif max_loss <= -10.0 and not has_trimmed:
-            stage1_stocks.append({
-                "code": code, "name": name, "shares": shares, "cur_price": cur_price,
-                "cost": cost, "dd_pct": dd_pct, "peak_price": peak_price
-            })
 
     # ──────────────────────────────────────────────────────────────────────────
-    # 四大風控優先權判定 (忠實對齊 simulator.py)
+    # 三大風控優先權判定 (忠實對齊 simulator.py)
     # ──────────────────────────────────────────────────────────────────────────
 
     # 優先權 1：宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
@@ -221,7 +214,7 @@ def run_risk_monitor():
         send_risk_notify("\n".join(clean_lines))
         return "MACRO_STOPLOSS"
 
-    # 優先權 2~4：若宏觀未清倉，微觀停損/減碼與宏觀停利合併通報，絕不互斥遺漏
+    # 優先權 2~3：若宏觀未清倉，微觀個股停損與宏觀停利合併通報，絕不互斥遺漏
     report_sections = []
 
     # 報價異常警告 (避免行情缺漏導致悄悄漏停損)
@@ -234,28 +227,15 @@ def run_risk_monitor():
             sec.append(f"  - {s}")
         report_sections.append("\n".join(sec))
 
-    # 微觀個股第二階段移動停損 (高點回撤 20% 全清倉)
+    # 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
     if stage2_stocks:
-        sec = ["【微觀個股第二階段移動停損 (門檻 -20.0%)】"]
+        sec = ["【微觀個股移動停損 (門檻 -20.0%)】"]
         for s in stage2_stocks:
             sec.append(
                 f"‧ 標的：{s['code']} {s['name']}\n"
                 f" - 高點回撤 {s['dd_pct']:.1f}%\n"
                 f" - 數據：現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})\n"
-                f" - **全砍** 賣出{s['shares']} 股"
-            )
-        report_sections.append("\n".join(sec))
-
-    # 微觀個股第一階段移動減碼 (高點回撤 10% 砍半 50%)
-    if stage1_stocks:
-        sec = ["【微觀個股第一階段移動減碼 (門檻 -10.0%)】"]
-        for s in stage1_stocks:
-            trim_shares = int(s['shares'] * 0.5)
-            sec.append(
-                f"‧ 標的：{s['code']} {s['name']}\n"
-                f" - 高點回撤 {s['dd_pct']:.1f}%\n"
-                f" - 數據：現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})\n"
-                f" - **砍半** 賣出 {trim_shares} 股"
+                f" - **全砍** 賣出 {s['shares']} 股"
             )
         report_sections.append("\n".join(sec))
 
