@@ -30,6 +30,30 @@ if env_path.exists():
     load_dotenv(dotenv_path=env_path)
 
 
+def chunk_message(content: str, max_limit: int = 1900) -> list:
+    """將過長訊息依行安全切分為多則 Discord 訊息 (避免超過 2000 字元限制)"""
+    if len(content) <= max_limit:
+        return [content]
+
+    chunks = []
+    current_chunk = []
+    current_len = 0
+
+    for line in content.split("\n"):
+        line_len = len(line) + 1
+        if current_len + line_len > max_limit:
+            chunks.append("\n".join(current_chunk))
+            current_chunk = [line]
+            current_len = line_len
+        else:
+            current_chunk.append(line)
+            current_len += line_len
+
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+    return chunks
+
+
 def send_risk_notify(message: str) -> bool:
     """發送低熵風控警報至指定頻道 (平時安靜，觸發才響)"""
     webhook_url = os.environ.get("DC_RISK_WEBHOOK_URL")
@@ -37,12 +61,19 @@ def send_risk_notify(message: str) -> bool:
         print("[WARN] 未設定 DC_RISK_WEBHOOK_URL")
         return False
 
-    try:
-        res = requests.post(webhook_url, json={"content": message})
-        return res.status_code in (200, 204)
-    except Exception as e:
-        print(f"[ERROR] 發送風控警報失敗: {e}")
-        return False
+    messages = chunk_message(message)
+    success = True
+    for msg in messages:
+        try:
+            res = requests.post(webhook_url, json={"content": msg}, timeout=10)
+            if res.status_code not in (200, 204):
+                print(f"[ERROR] Discord Webhook 發送失敗 ({res.status_code}): {res.text}")
+                success = False
+        except Exception as e:
+            print(f"[ERROR] 發送風控警報異常: {e}")
+            success = False
+
+    return success
 
 
 def run_risk_monitor():
@@ -53,6 +84,13 @@ def run_risk_monitor():
     market_db_path = config.MARKET_DATA_DIR / "market.parquet"
 
     try:
+        if not journal_path.exists():
+            raise FileNotFoundError(f"找不到交易紀錄檔: {journal_path}")
+        if not navpu_path.exists():
+            raise FileNotFoundError(f"找不到淨值檔: {navpu_path}")
+        if not market_db_path.exists():
+            raise FileNotFoundError(f"找不到行情檔: {market_db_path}")
+
         df_record = pd.read_csv(journal_path, dtype={'id': str}, encoding='utf-8-sig')
         df_record.columns = df_record.columns.str.strip().str.lower()
         if 'cycle' in df_record.columns:
@@ -88,11 +126,12 @@ def run_risk_monitor():
             df_price = df_price.rename(columns={'price': 'close'})
         df_price['date'] = pd.to_datetime(df_price['date'], errors='coerce').dt.normalize()
         df_price['id'] = df_price['id'].astype(str).str.strip().str.replace('.0', '', regex=False)
-        # 確保依日期排序，後續 groupby('id').tail(1) 才能準確取得最新收盤價
         df_price = df_price.sort_values('date')
     except Exception as e:
-        print(f"[WARN] 讀取資料失敗: {e}")
-        return None
+        err_msg = f"台股風控系統異常警告\n狀態：**資料讀取失敗**\n‧ ERROR：{str(e)}"
+        print(f"[ERROR] 讀取資料失敗: {e}")
+        send_risk_notify(err_msg)
+        return False
 
     # 1. 解析當前持倉與 Stage 1 減碼狀態
     active_holdings = []
@@ -131,7 +170,7 @@ def run_risk_monitor():
             active_holdings.append({
                 "code": aid,
                 "name": stock_name,
-                "shares": int(cum_shares),
+                "shares": int(round(cum_shares)),
                 "cost": total_cost / cum_shares,
                 "entry_date": cycle_start_date,
                 "has_trimmed": has_trimmed,
@@ -142,22 +181,41 @@ def run_risk_monitor():
         print("[INFO] 目前為 100% 現金空倉狀態，安全不打擾。")
         return None
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    latest_px_map = df_price.groupby('id').tail(1).set_index('id')['close'].to_dict()
+    # 取得市場最新行情日期與當日收盤價
+    latest_mkt_date = df_price['date'].max()
+    today_str = latest_mkt_date.strftime("%Y-%m-%d") if pd.notnull(latest_mkt_date) else datetime.now().strftime("%Y-%m-%d")
+
+    # 建立最新一天的價格映射 (過濾掉歷史舊價，確保 missing_price_stocks 能如實反映今日缺漏)
+    latest_day_df = df_price[df_price['date'] == latest_mkt_date].dropna(subset=['close'])
+    latest_px_map = dict(zip(latest_day_df['id'], latest_day_df['close']))
 
     # 2. 宏觀帳戶回撤與獲利計算（使用 nav_per_unit 排除出入金干擾，忠實反映真實策略績效）
-    curr = df_record[df_record['cycle'] == df_record['cycle'].max()]
-    buys = curr[(curr['action'] == 'buy') & (~curr['id'].str.startswith('cash'))]
-    entry_date = buys['date'].min() if not buys.empty else df_record['date'].max()
+    # 取得本週期真實進場日 (取所有持股的最小進場日)
+    valid_entry_dates = [h["entry_date"] for h in active_holdings if pd.notnull(h["entry_date"])]
+    entry_date = min(valid_entry_dates) if valid_entry_dates else df_record['date'].max()
     entry_date_str = entry_date.strftime('%m/%d') if pd.notnull(entry_date) else ""
-    has_taken_macro_profit = (curr['reason'] == 'TP_QUARTER').any()
+
+    # 檢查是否已執行過宏觀停利
+    curr_cycle = df_record['cycle'].max()
+    curr_records = df_record[df_record['cycle'] == curr_cycle] if pd.notnull(curr_cycle) else df_record
+    has_taken_macro_profit = (
+        'reason' in curr_records.columns and
+        curr_records['reason'].dropna().astype(str).str.strip().str.upper().eq('TP_QUARTER').any()
+    )
 
     nav_col = 'nav_per_unit' if 'nav_per_unit' in df_history.columns else 'total_nav'
     period_df = df_history[df_history['date'] >= entry_date]
+
     if not period_df.empty:
-        peak_nav = period_df[nav_col].max()
-        entry_nav = period_df[nav_col].iloc[0]
+        # 進場基準淨值：取進場日之前的最後一筆收盤淨值 (對齊 simulator.py 的 capital 起始基準)
+        pre_entry_history = df_history[df_history['date'] < entry_date]
+        if not pre_entry_history.empty:
+            entry_nav = pre_entry_history[nav_col].iloc[-1]
+        else:
+            entry_nav = period_df[nav_col].iloc[0]
+
         cur_nav = df_history[nav_col].iloc[-1]
+        peak_nav = max(entry_nav, period_df[nav_col].max())
         macro_drawdown = min(0.0, ((cur_nav / peak_nav) - 1.0) * 100) if peak_nav > 0 else 0.0
         macro_roi = ((cur_nav / entry_nav) - 1.0) * 100 if entry_nav > 0 else 0.0
     else:
@@ -172,7 +230,7 @@ def run_risk_monitor():
         name = h["name"]
         cost = h["cost"]
         shares = h["shares"]
-        start_d = h["entry_date"]
+        start_d = h["entry_date"] if pd.notnull(h["entry_date"]) else df_record['date'].min()
 
         if code not in latest_px_map:
             missing_price_stocks.append(f"{code} {name}")
@@ -197,69 +255,59 @@ def run_risk_monitor():
     # ──────────────────────────────────────────────────────────────────────────
     # 三大風控優先權判定 (忠實對齊 simulator.py)
     # ──────────────────────────────────────────────────────────────────────────
-
-    # 優先權 1：宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
-    if macro_drawdown <= -10.0:
-        clean_lines = [
-            "台股風控通知",
-            f"日期：{today_str}",
-            "狀態：宏觀帳戶高點移動停損 (門檻 -10.0%)",
-            "",
-            f"‧ 本週期({entry_date_str})單位淨值自高點回撤已達 {macro_drawdown:.1f}%",
-            " - **全面清倉**",
-        ]
-        for h in active_holdings:
-            clean_lines.append(f"  - {h['code']} {h['name']}：全數賣出 {h['shares']} 股")
-
-        send_risk_notify("\n".join(clean_lines))
-        return "MACRO_STOPLOSS"
-
-    # 優先權 2~3：若宏觀未清倉，微觀個股停損與宏觀停利合併通報，絕不互斥遺漏
     report_sections = []
 
     # 報價異常警告 (避免行情缺漏導致悄悄漏停損)
     if missing_price_stocks:
-        sec = [
+        sec_lines = [
             "【報價異常警告】",
-            "‧ 以下持倉於今日 market.parquet 查無收盤價，請手動確認：",
+            "‧ 今日查無收盤價：",
         ]
         for s in missing_price_stocks:
-            sec.append(f"  - {s}")
+            sec_lines.append(f"  - {s}")
+        report_sections.append("\n".join(sec_lines))
+
+    # 優先權 1：宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
+    if macro_drawdown <= -10.0:
+        sec = [
+            "【宏觀帳戶移動停損 (門檻 -10.0%)】",
+            "‧ 動作：**全面清倉**",
+        ]
         report_sections.append("\n".join(sec))
 
+        final_message = f"台股風控通知\n日期：{today_str}\n" + "\n\n".join(report_sections)
+        success = send_risk_notify(final_message)
+        return "MACRO_STOPLOSS" if success else False
+
+    # 優先權 2~3：若宏觀未清倉，微觀個股停損與宏觀停利合併通報，絕不互斥遺漏
+
     # 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
+    stage2_codes = set()
     if stage2_stocks:
         sec = ["【微觀個股移動停損 (門檻 -20.0%)】"]
         for s in stage2_stocks:
-            sec.append(
-                f"‧ 標的：{s['code']} {s['name']}\n"
-                f" - 高點回撤 {s['dd_pct']:.1f}%\n"
-                f" - 數據：現價 {s['cur_price']:.2f} (成本 {s['cost']:.2f})\n"
-                f" - **全砍** 賣出 {s['shares']} 股"
-            )
+            stage2_codes.add(s['code'])
+            sec.append(f"‧ 動作：{s['code']} {s['name']}：**全數賣出**")
         report_sections.append("\n".join(sec))
 
     # 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
     if macro_roi >= 10.0 and not has_taken_macro_profit:
         sec = [
             "【宏觀帳戶停利 (門檻 +10.0%)】",
-            f"‧ 本週期({entry_date_str})單位淨值獲利已達 {macro_roi:+.1f}%\n"
-            " - **各檔持股砍 1/4 獲利入袋降低波動率**",
+            f"‧ 動作：**持股各砍 1/4 獲利入袋**",
         ]
-        for h in active_holdings:
-            quarter = int(h['shares'] * 0.25)
-            remain = h['shares'] - quarter
-            sec.append(f"  - {h['code']} {h['name']}：目前 {h['shares']} 股 -> 賣出 {quarter} 股 (剩餘 {remain} 股)")
         report_sections.append("\n".join(sec))
 
     if report_sections:
-        final_message = f"台股風控通知\n日期：{today_str}\n\n" + "\n\n".join(report_sections)
-        send_risk_notify(final_message)
-        return "RISK_ACTIONS_TRIGGERED"
+        final_message = f"台股風控通知\n日期：{today_str}\n" + "\n\n".join(report_sections)
+        success = send_risk_notify(final_message)
+        return "RISK_ACTIONS_TRIGGERED" if success else False
     else:
         print("[INFO] 風控巡檢完成：無觸發任何風控門檻，完全不發送訊息打擾。")
         return None
 
 
 if __name__ == "__main__":
-    run_risk_monitor()
+    result = run_risk_monitor()
+    if result is False:
+        sys.exit(1)

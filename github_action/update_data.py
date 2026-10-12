@@ -24,8 +24,11 @@ def send_database_notify(message: str) -> bool:
         return False
 
     try:
-        res = requests.post(webhook_url, json={"content": message})
-        return res.status_code in (200, 204)
+        res = requests.post(webhook_url, json={"content": message}, timeout=15)
+        if res.status_code not in (200, 204):
+            print(f"[ERROR] Discord Webhook 發送失敗 ({res.status_code}): {res.text}")
+            return False
+        return True
     except Exception as e:
         print(f"[ERROR] 發送資料庫通知失敗: {e}")
         return False
