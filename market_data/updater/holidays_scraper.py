@@ -1,3 +1,12 @@
+import os
+import sys
+
+# 把專案根目錄加入 sys.path，確保直接執行時能找到 config
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import time
 import random
 import requests
@@ -9,7 +18,7 @@ def fetch_holidays():
     print("[INFO] 開始抓取 TWSE 官方休市名單 (2021 至今)...")
     
     # 1. 讀取現有的休市名單
-    save_path = config.MARKET_DIAGNOSE_DIR / 'holidays.csv'
+    save_path = config.MARKET_DATA_DIR / 'holidays.csv'
     
     existing_years = set()
     existing_df = None

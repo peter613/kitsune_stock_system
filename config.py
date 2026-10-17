@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent
 #=============================
 MARKET_DATA_DIR = BASE_DIR / "market_data" / "data"
 MARKET_UPDATER_DIR = BASE_DIR / "market_data" / "updater"
-MARKET_DIAGNOSE_DIR = BASE_DIR / "market_data" / "diagnose"
+MARKET_DIAGNOSE_DIR = MARKET_DATA_DIR  # 相容舊路徑設定，現 holidays.csv 與報價統一置於 MARKET_DATA_DIR
 
 #=============================
 # fund_stock_management

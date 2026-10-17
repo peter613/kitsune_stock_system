@@ -311,26 +311,26 @@ def calculate_settlement_data(df_record, df_price):
 # ──────────────────────────────────────────
 # 模組 3：風控警報
 # ──────────────────────────────────────────
-def _check_micro_stage1_stoploss_alerts(unrealized_data, threshold=-10.0, stage2_threshold=-20.0):
-    alerts = []
-    for item in unrealized_data:
-        # 若本週期該股已執行過減碼（如已砍半），不再重複觸發 Stage 1 減碼警報
-        if item.get("has_trimmed", False):
-            continue
+# def _check_micro_stage1_stoploss_alerts(unrealized_data, threshold=-10.0, stage2_threshold=-20.0):
+#     alerts = []
+#     for item in unrealized_data:
+#         若本週期該股已執行過減碼（如已砍半），不再重複觸發 Stage 1 減碼警報
+#         if item.get("has_trimmed", False):
+#             continue
 
-        dd_float = float(item.get("高點回撤", "0%").replace("%", ""))
-        roi_float = float(item["累積報酬率"].replace("%", ""))
-        max_loss = min(dd_float, roi_float)
+#         dd_float = float(item.get("高點回撤", "0%").replace("%", ""))
+#         roi_float = float(item["累積報酬率"].replace("%", ""))
+#         max_loss = min(dd_float, roi_float)
 
-        # 若已跌破 Stage 2 門檻 (-20%)，交由 Stage 2 警報處理，避免重複警報
-        if max_loss <= stage2_threshold:
-            continue
+#         # 若已跌破 Stage 2 門檻 (-20%)，交由 Stage 2 警報處理，避免重複警報
+#         if max_loss <= stage2_threshold:
+#             continue
 
-        if max_loss <= threshold:
-            alerts.append(
-                f"微觀個股第一階段移動減碼 ： 觸發 {abs(threshold):.0f}% 移動停損 ， {item['代號']} {item['名稱']} 砍半倉，高點回撤已達 {dd_float:.1f}%"
-            )
-    return alerts
+#         if max_loss <= threshold:
+#             alerts.append(
+#                 f"微觀個股第一階段移動減碼 ： 觸發 {abs(threshold):.0f}% 移動停損 ， {item['代號']} {item['名稱']} 砍半倉，高點回撤已達 {dd_float:.1f}%"
+#             )
+#     return alerts
 
 def _check_micro_stage2_stoploss_alerts(unrealized_data, threshold=-20.0):
     alerts = []
@@ -341,7 +341,7 @@ def _check_micro_stage2_stoploss_alerts(unrealized_data, threshold=-20.0):
 
         if max_loss <= threshold:
             alerts.append(
-                f"微觀個股第二階段移動停損 ： 觸發 {abs(threshold):.0f}% 移動停損 ， {item['代號']} {item['名稱']} 砍全倉，高點回撤已達 {dd_float:.1f}%"
+                f"微觀個股移動停損 ： 觸發 {abs(threshold):.0f}% 移動停損 ， {item['代號']} {item['名稱']} 砍全倉，高點回撤已達 {dd_float:.1f}%"
             )
     return alerts
 
@@ -433,7 +433,7 @@ def generate_system_alerts(df_record, df_price, df_0050, unrealized_data, df_his
     alerts = []
     if has_active_holdings:
         alerts.extend(_check_bear_market_alerts(df_0050))
-        alerts.extend(_check_micro_stage1_stoploss_alerts(unrealized_data))
+        #alerts.extend(_check_micro_stage1_stoploss_alerts(unrealized_data))
         alerts.extend(_check_micro_stage2_stoploss_alerts(unrealized_data))
         if df_history is not None:
             alerts.extend(_check_macro_stoploss_alerts(df_record, df_history))

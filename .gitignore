@@ -19,6 +19,7 @@ sandbox/
 !**/white_list.csv
 !**/journal.csv
 !**/transaction.csv
+!**/holidays.csv
 *.parquet
 *.png
 *.cbm

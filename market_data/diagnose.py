@@ -1,3 +1,12 @@
+import os
+import sys
+
+# 把專案根目錄加入 sys.path，確保直接執行時能找到 config
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -30,7 +39,7 @@ def diagnose_market():
     all_dates = sorted(df_m['date'].unique())
     weekdays = ['一', '二', '三', '四', '五', '六', '日']
     
-    holidays_path = config.MARKET_DIAGNOSE_DIR / 'holidays.csv'
+    holidays_path = config.MARKET_DATA_DIR / 'holidays.csv'
     holiday_dates = set()
     if holidays_path.exists():
         df_h = pd.read_csv(holidays_path)

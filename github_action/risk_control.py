@@ -79,17 +79,25 @@ def send_risk_notify(message: str) -> bool:
 def run_risk_monitor():
     print("[INFO] Starting Risk Control Evaluation...")
 
+    # 1. 週末休市 (完全對齊 market.py 爬蟲語句)
+    tw_now = pd.Timestamp.now(tz='Asia/Taipei')
+    if tw_now.weekday() >= 5:
+        day_str = ['六', '日'][tw_now.weekday() - 5]
+        print(f"[INFO] 今日為週末 (週{day_str})，市場休市。")
+        return None
+
     journal_path = config.STOCK_JOURNAL_DIR / "journal.csv"
     navpu_path = config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv"
     market_db_path = config.MARKET_DATA_DIR / "market.parquet"
 
+    # 2. 休市防呆 (平日國定假日/颱風假未開市或爬蟲略過，100% 對齊證交所爬蟲語句)
+    if not navpu_path.exists() or not market_db_path.exists():
+        print("[INFO] 上市與上櫃皆無資料 (休市或爬蟲異常)，風控巡檢略過。")
+        return None
+
     try:
         if not journal_path.exists():
             raise FileNotFoundError(f"找不到交易紀錄檔: {journal_path}")
-        if not navpu_path.exists():
-            raise FileNotFoundError(f"找不到淨值檔: {navpu_path}")
-        if not market_db_path.exists():
-            raise FileNotFoundError(f"找不到行情檔: {market_db_path}")
 
         df_record = pd.read_csv(journal_path, dtype={'id': str}, encoding='utf-8-sig')
         df_record.columns = df_record.columns.str.strip().str.lower()

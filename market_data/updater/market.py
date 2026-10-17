@@ -285,6 +285,21 @@ def update_market_data(specific_date=None):
     if target_dt.weekday() >= 5:
         return {"status": "略過", "error": f"今日為週末 (週{['六','日'][target_dt.weekday()-5]})，市場休市。"}
 
+    # 國定假日休市防呆 (對照證交所休市表 holidays.csv)
+    holidays_file = config.MARKET_DATA_DIR / "holidays.csv"
+    if holidays_file.exists():
+        try:
+            df_h = pd.read_csv(holidays_file)
+            df_h = df_h[~df_h['name'].astype(str).str.contains('開始交易')]
+            df_h['date'] = pd.to_datetime(df_h['date']).dt.date
+            target_date = target_dt.date() if isinstance(target_dt, datetime) else target_dt
+            matched = df_h[df_h['date'] == target_date]
+            if not matched.empty:
+                holiday_name = matched['name'].iloc[0]
+                return {"status": "略過", "error": f"今日為國定假日/休市日 ({holiday_name})，市場休市。"}
+        except Exception as e:
+            print(f"[WARN] 讀取休市清單失敗: {e}")
+
     today_str = target_dt.strftime('%Y%m%d') 
     standard_date_str = target_dt.strftime('%Y-%m-%d') 
 
