@@ -214,15 +214,39 @@ def backtester(
     # 記錄原始 return_20d（標籤），回測結果另存 simulated_return
     test_df['simulated_return'] = np.nan
 
-    # ── 3. 市場日頻資料 (優先採用還原股價以反映真實總報酬並防除息假停損) ──
+    # ── 3. 市場日頻資料 (以還原股價為主防除息假停損，最新未收錄日期以原始報價無縫補齊) ──
+    raw_file = config.MARKET_DATA_DIR / "market.parquet"
     adj_file = config.MARKET_DATA_DIR / "market_adj.parquet"
+
     if adj_file.exists():
         market_df = pd.read_parquet(adj_file)
         market_df = market_df.rename(columns={'open_adj': 'open', 'high_adj': 'high', 'low_adj': 'low', 'close_adj': 'close'})
+        market_df['date'] = pd.to_datetime(market_df['date'])
+        market_df['id']   = market_df['id'].astype(str).str.zfill(4)
+
+        # 若原始行情有更晚的日期 (如 10 月更新日之後)，自動縫合最新資料
+        if raw_file.exists():
+            max_adj_date = market_df['date'].max()
+            try:
+                df_raw_new = pd.read_parquet(
+                    raw_file,
+                    columns=['id', 'date', 'open', 'high', 'low', 'close'],
+                    filters=[('date', '>', max_adj_date)]
+                )
+            except Exception:
+                df_raw_new = pd.read_parquet(raw_file, columns=['id', 'date', 'open', 'high', 'low', 'close'])
+                df_raw_new['date'] = pd.to_datetime(df_raw_new['date'])
+                df_raw_new = df_raw_new[df_raw_new['date'] > max_adj_date]
+
+            if not df_raw_new.empty:
+                df_raw_new['date'] = pd.to_datetime(df_raw_new['date'])
+                df_raw_new['id']   = df_raw_new['id'].astype(str).str.zfill(4)
+                market_df = pd.concat([market_df, df_raw_new], ignore_index=True)
     else:
-        market_df = pd.read_parquet(config.MARKET_DATA_DIR / "market.parquet")
-    market_df['date'] = pd.to_datetime(market_df['date'])
-    market_df['id']   = market_df['id'].astype(str).str.zfill(4)
+        market_df = pd.read_parquet(raw_file)
+        market_df['date'] = pd.to_datetime(market_df['date'])
+        market_df['id']   = market_df['id'].astype(str).str.zfill(4)
+
     market_df = market_df.sort_values(['id', 'date']).set_index(['id', 'date'])
 
     # ── 4. 單位淨值法初始化 ──────────────────────────

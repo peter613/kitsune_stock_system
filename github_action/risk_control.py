@@ -86,11 +86,27 @@ def run_risk_monitor():
         print(f"[INFO] 今日為週末 (週{day_str})，市場休市。")
         return None
 
+    # 2. 國定假日/休市日 (對照證交所休市表 holidays.csv，完全對齊 market.py 爬蟲語句)
+    holidays_file = config.MARKET_DATA_DIR / "holidays.csv"
+    if holidays_file.exists():
+        try:
+            df_h = pd.read_csv(holidays_file)
+            df_h = df_h[~df_h['name'].astype(str).str.contains('開始交易')]
+            df_h['date'] = pd.to_datetime(df_h['date']).dt.date
+            today_date = tw_now.date()
+            matched = df_h[df_h['date'] == today_date]
+            if not matched.empty:
+                holiday_name = matched['name'].iloc[0]
+                print(f"[INFO] 今日為國定假日/休市日 ({holiday_name})，市場休市。")
+                return None
+        except Exception as e:
+            print(f"[WARN] 讀取休市清單失敗: {e}")
+
     journal_path = config.STOCK_JOURNAL_DIR / "journal.csv"
     navpu_path = config.FUND_STOCK_ADMINISTRATION_DIR / "navpu.csv"
     market_db_path = config.MARKET_DATA_DIR / "market.parquet"
 
-    # 2. 休市防呆 (平日國定假日/颱風假未開市或爬蟲略過，100% 對齊證交所爬蟲語句)
+    # 3. 休市防呆 (平日國定假日/颱風假未開市或爬蟲略過，100% 對齊證交所爬蟲語句)
     if not navpu_path.exists() or not market_db_path.exists():
         print("[INFO] 上市與上櫃皆無資料 (休市或爬蟲異常)，風控巡檢略過。")
         return None
