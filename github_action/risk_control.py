@@ -284,8 +284,8 @@ def run_risk_monitor():
     # 報價異常警告 (避免行情缺漏導致悄悄漏停損)
     if missing_price_stocks:
         sec_lines = [
-            "【報價異常警告】",
-            "‧ 今日查無收盤價：",
+            "報價異常警告",
+            "【今日查無收盤價：】",
         ]
         for s in missing_price_stocks:
             sec_lines.append(f"  - {s}")
@@ -294,8 +294,8 @@ def run_risk_monitor():
     # 優先權 1：宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
     if macro_drawdown <= -10.0:
         sec = [
-            "【宏觀帳戶移動停損 (門檻 -10.0%)】",
-            "‧ 動作：**全面清倉**",
+            "宏觀帳戶移動停損 (門檻 -10.0%)",
+            "【**全面清倉**】",
         ]
         report_sections.append("\n".join(sec))
 
@@ -308,17 +308,17 @@ def run_risk_monitor():
     # 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
     stage2_codes = set()
     if stage2_stocks:
-        sec = ["【微觀個股移動停損 (門檻 -20.0%)】"]
+        sec = ["微觀個股移動停損 (門檻 -20.0%)"]
         for s in stage2_stocks:
             stage2_codes.add(s['code'])
-            sec.append(f"‧ 動作：{s['code']} {s['name']}：**全數賣出**")
+            sec.append(f"【{s['code']} {s['name']}：**全數賣出**】")
         report_sections.append("\n".join(sec))
 
     # 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
     if macro_roi >= 10.0 and not has_taken_macro_profit:
         sec = [
-            "【宏觀帳戶停利 (門檻 +10.0%)】",
-            f"‧ 動作：**持股各砍 1/4 獲利入袋**",
+            "宏觀帳戶停利 (門檻 +10.0%)",
+            f"【**持股各砍 1/4 獲利入袋**】",
         ]
         report_sections.append("\n".join(sec))
 
