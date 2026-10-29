@@ -34,7 +34,7 @@ FEATURE_COLS = [
     "market_kama_mean", "market_adx_mean",
 
     # 動能排名與量能 
-    "vol_surge_3",  "box_rs_interact",#"rs_rank_60",
+    "vol_surge_3", "box_rs_interact",#"rs_rank_60",
 
     # 基本面
     "yoy", "rev_breakout_12", "rev_bias_3",
