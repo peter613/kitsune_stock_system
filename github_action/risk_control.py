@@ -76,6 +76,32 @@ def send_risk_notify(message: str) -> bool:
     return success
 
 
+def get_0050_bear_market_info():
+    """
+    100% 線上獲取 0050 近 1 年（約 252 交易日）還原收盤價走勢，計算距離 1 年最高點回撤。
+    純線上雲端抓取（支援 yfinance 與 Yahoo Finance API），完全不依賴本地 etf.csv。
+    返回: (cur_price, peak_price, drawdown_pct)
+    """
+    # 直連 Yahoo Finance Chart API 獲取精確還原股價 (adjclose)
+    try:
+        url = 'https://query1.finance.yahoo.com/v8/finance/chart/0050.TW?range=1y&interval=1d'
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            d = r.json()['chart']['result'][0]
+            closes = d['indicators']['adjclose'][0]['adjclose']
+            df_s = pd.Series(closes).dropna()
+            if len(df_s) >= 20:
+                cur = float(df_s.iloc[-1])
+                peak = float(df_s.max())
+                dd = (cur / peak - 1.0) * 100
+                return cur, peak, dd
+    except Exception as e:
+        print(f"[WARN] Yahoo Chart API 線上讀取 0050 異常: {e}")
+
+    return None, None, None
+
+
 def run_risk_monitor():
     print("[INFO] Starting Risk Control Evaluation...")
 
@@ -277,7 +303,7 @@ def run_risk_monitor():
             })
 
     # ──────────────────────────────────────────────────────────────────────────
-    # 三大風控優先權判定 (忠實對齊 simulator.py)
+    # 四大風控優先權判定 (宏觀熊市熔斷 / 宏觀帳戶停損 / 微觀個股停損 / 宏觀停利)
     # ──────────────────────────────────────────────────────────────────────────
     report_sections = []
 
@@ -285,17 +311,33 @@ def run_risk_monitor():
     if missing_price_stocks:
         sec_lines = [
             "報價異常警告",
-            "【今日查無收盤價：】",
+            "今日查無收盤價：",
         ]
         for s in missing_price_stocks:
             sec_lines.append(f"  - {s}")
         report_sections.append("\n".join(sec_lines))
 
+    # 優先權 0：宏觀大盤技術性熊市熔斷 (0050 近 1 年自高點回撤達 -20.0%)
+    etf_cur, etf_peak, etf_dd = get_0050_bear_market_info()
+    if etf_dd is not None:
+        print(f"[INFO] 0050 大盤狀態: 現價 {etf_cur:.2f} | 1年最高 {etf_peak:.2f} | 回撤 {etf_dd:.2f}%")
+        if etf_dd <= -20.0:
+            sec = [
+                "技術性熊市(0050回撤-20%)",
+                "**全面清倉**",
+                #f"（目前 0050: {etf_cur:.2f}，1年最高: {etf_peak:.2f}，回撤: {etf_dd:.2f}%）"
+            ]
+            report_sections.append("\n".join(sec))
+
+            final_message = f"台股風控通知\n日期：{today_str}\n\n" + "\n\n".join(report_sections)
+            success = send_risk_notify(final_message)
+            return "BEAR_MARKET_STOPLOSS" if success else False
+
     # 優先權 1：宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
     if macro_drawdown <= -10.0:
         sec = [
             "宏觀帳戶移動停損 (門檻 -10.0%)",
-            "【**全面清倉**】",
+            "**全面清倉**",
         ]
         report_sections.append("\n".join(sec))
 
@@ -311,14 +353,14 @@ def run_risk_monitor():
         sec = ["微觀個股移動停損 (門檻 -20.0%)"]
         for s in stage2_stocks:
             stage2_codes.add(s['code'])
-            sec.append(f"【{s['code']} {s['name']}：**全數賣出**】")
+            sec.append(f"{s['code']} {s['name']}：**全數賣出**")
         report_sections.append("\n".join(sec))
 
     # 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
     if macro_roi >= 10.0 and not has_taken_macro_profit:
         sec = [
             "宏觀帳戶停利 (門檻 +10.0%)",
-            f"【**持股各砍 1/4 獲利入袋**】",
+            f"**持股各砍 1/4 獲利入袋**",
         ]
         report_sections.append("\n".join(sec))
 
