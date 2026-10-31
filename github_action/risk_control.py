@@ -306,6 +306,7 @@ def run_risk_monitor():
     # 四大風控優先權判定 (宏觀熊市熔斷 / 宏觀帳戶停損 / 微觀個股停損 / 宏觀停利)
     # ──────────────────────────────────────────────────────────────────────────
     report_sections = []
+    action_type = None
 
     # 報價異常警告 (避免行情缺漏導致悄悄漏停損)
     if missing_price_stocks:
@@ -316,58 +317,46 @@ def run_risk_monitor():
         for s in missing_price_stocks:
             sec_lines.append(f"  - {s}")
         report_sections.append("\n".join(sec_lines))
+        action_type = "PRICE_MISSING_WARNING"
 
     # 優先權 0：宏觀大盤技術性熊市熔斷 (0050 近 1 年自高點回撤達 -20.0%)
     etf_cur, etf_peak, etf_dd = get_0050_bear_market_info()
     if etf_dd is not None:
         print(f"[INFO] 0050 大盤狀態: 現價 {etf_cur:.2f} | 1年最高 {etf_peak:.2f} | 回撤 {etf_dd:.2f}%")
         if etf_dd <= -20.0:
-            sec = [
-                "技術性熊市(0050回撤-20%)",
-                "**全面清倉**",
-                #f"（目前 0050: {etf_cur:.2f}，1年最高: {etf_peak:.2f}，回撤: {etf_dd:.2f}%）"
-            ]
-            report_sections.append("\n".join(sec))
-
-            final_message = f"台股風控通知\n日期：{today_str}\n\n" + "\n\n".join(report_sections)
-            success = send_risk_notify(final_message)
-            return "BEAR_MARKET_STOPLOSS" if success else False
+            report_sections.append("技術性熊市(0050回撤-20%)\n**全面清倉**")
+            action_type = "BEAR_MARKET_STOPLOSS"
 
     # 優先權 1：宏觀帳戶高點移動停損 (總資產/單位淨值自高點跌 10% 全清倉)
-    if macro_drawdown <= -10.0:
-        sec = [
-            "宏觀帳戶移動停損 (門檻 -10.0%)",
-            "**全面清倉**",
-        ]
-        report_sections.append("\n".join(sec))
+    # 若已觸發熊市清倉，則無需重複判定
+    if action_type != "BEAR_MARKET_STOPLOSS" and macro_drawdown <= -10.0:
+        report_sections.append("宏觀帳戶移動停損 (門檻 -10.0%)\n**全面清倉**")
+        action_type = "MACRO_STOPLOSS"
 
-        final_message = f"台股風控通知\n日期：{today_str}\n" + "\n\n".join(report_sections)
-        success = send_risk_notify(final_message)
-        return "MACRO_STOPLOSS" if success else False
+    # 優先權 2~3：若無全面清倉 (非熊市且非帳戶大停損)，微觀個股停損與宏觀停利合併通報
+    if action_type not in ("BEAR_MARKET_STOPLOSS", "MACRO_STOPLOSS"):
+        # 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
+        if stage2_stocks:
+            sec = ["微觀個股移動停損 (門檻 -20.0%)"]
+            for s in stage2_stocks:
+                sec.append(f"{s['code']} {s['name']}：**全數賣出**")
+            report_sections.append("\n".join(sec))
+            action_type = "RISK_ACTIONS_TRIGGERED"
 
-    # 優先權 2~3：若宏觀未清倉，微觀個股停損與宏觀停利合併通報，絕不互斥遺漏
+        # 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
+        if macro_roi >= 10.0 and not has_taken_macro_profit:
+            sec = [
+                "宏觀帳戶停利 (門檻 +10.0%)",
+                "**持股各砍 1/4 獲利入袋**",
+            ]
+            report_sections.append("\n".join(sec))
+            action_type = "RISK_ACTIONS_TRIGGERED"
 
-    # 微觀個股移動停損 (高點回撤 20% 全清倉防地雷)
-    stage2_codes = set()
-    if stage2_stocks:
-        sec = ["微觀個股移動停損 (門檻 -20.0%)"]
-        for s in stage2_stocks:
-            stage2_codes.add(s['code'])
-            sec.append(f"{s['code']} {s['name']}：**全數賣出**")
-        report_sections.append("\n".join(sec))
-
-    # 宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
-    if macro_roi >= 10.0 and not has_taken_macro_profit:
-        sec = [
-            "宏觀帳戶停利 (門檻 +10.0%)",
-            f"**持股各砍 1/4 獲利入袋**",
-        ]
-        report_sections.append("\n".join(sec))
-
+    # 統一收攏發送：全程式僅此一處組裝發送，避免代碼重複
     if report_sections:
-        final_message = f"台股風控通知\n日期：{today_str}\n" + "\n\n".join(report_sections)
+        final_message = f"台股風控通知\n日期：{today_str}\n\n" + "\n\n".join(report_sections)
         success = send_risk_notify(final_message)
-        return "RISK_ACTIONS_TRIGGERED" if success else False
+        return (action_type or "RISK_ACTIONS_TRIGGERED") if success else False
     else:
         print("[INFO] 風控巡檢完成：無觸發任何風控門檻，完全不發送訊息打擾。")
         return None
