@@ -18,7 +18,7 @@ COLUMNS = ['cycle', 'date', 'id', 'action', 'share', 'price', 'reason']
 REASONS = [
     'ENTRY',        # 每月定期換股進場買進
     'REBALANCE',    # 換股日例行結算出清
-    'SL_HALF',      # 微觀移動減碼 10% (砍半)
+    #'SL_HALF',      # 微觀移動減碼 10% (砍半)
     'SL_FULL',      # 微觀移動停損 20% (清倉)
     'TP_QUARTER',   # 宏觀獲利 10% 砍 1/4 入袋
     'MACRO_SL',     # 宏觀高點回撤 10% 清倉
