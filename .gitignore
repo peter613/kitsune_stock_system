@@ -25,7 +25,7 @@ sandbox/
 *.cbm
 
 #筆記
-note.txt
+note.md
 
 #測試
 sandbox/
