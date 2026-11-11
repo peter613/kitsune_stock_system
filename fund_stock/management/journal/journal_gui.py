@@ -23,14 +23,15 @@ from fund_stock.management.journal.update_journal import (
     get_recent_entries,
     REASONS
 )
+from fund_stock.management.core.position_sizing import load_0050_series, get_market_regime
 
 
 class JournalApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("小狐狸量化 — 交易紀錄輸入系統 (Kitsune Journal)")
-        self.geometry("880x700")
-        self.minsize(820, 640)
+        self.geometry("880x720")
+        self.minsize(820, 660)
 
         # 載入白名單股票名稱
         self.stock_names = load_stock_names()
@@ -41,6 +42,7 @@ class JournalApp(tk.Tk):
         self.stock_id_var = tk.StringVar()
         self.stock_name_var = tk.StringVar(value="請輸入代號")
         self.action_var = tk.StringVar(value="buy")
+        self.action_display_var = tk.StringVar(value="買進 (buy)")
         self.share_var = tk.StringVar()
         self.price_var = tk.StringVar()
         self.reason_var = tk.StringVar(value="ENTRY")
@@ -48,8 +50,8 @@ class JournalApp(tk.Tk):
 
         # 監聽股票代號變化以即時查名稱
         self.stock_id_var.trace_add("write", self._on_stock_id_changed)
-        # 監聽買賣切換以提供預設原因
-        self.action_var.trace_add("write", self._on_action_changed)
+        # 監聽交易原因選擇以自動判斷買/賣
+        self.reason_var.trace_add("write", self._on_reason_changed)
 
         self._setup_style()
         self._create_widgets()
@@ -84,7 +86,6 @@ class JournalApp(tk.Tk):
         self.style.configure("TEntry", font=self.input_font)
         self.style.configure("TSpinbox", font=self.input_font)
         self.style.configure("TCombobox", font=self.input_font)
-        self.style.configure("TRadiobutton", font=self.input_font)
         self.style.configure("TButton", font=self.button_font)
         self.style.configure("Accent.TButton", font=self.button_font, padding=6)
         self.style.configure("Danger.TButton", font=self.button_font, padding=4)
@@ -100,6 +101,19 @@ class JournalApp(tk.Tk):
         title_frame = ttk.Frame(main_frame)
         title_frame.pack(fill=tk.X, pady=(0, 10))
         ttk.Label(title_frame, text="台股交易紀錄輸入 (journal.csv)", style="Title.TLabel").pack(side=tk.LEFT)
+        
+        # 0050 熊市指標即時顯示
+        try:
+            s_0050 = load_0050_series()
+            regime = get_market_regime(1.0, s_0050)
+            bear_text = f" {regime['regime_label']} (0050回撤: {regime['_0050_return']})"
+            bear_fg = "#C0392B" if regime['bear_market'] else "#1E8449"
+        except Exception:
+            bear_text = "0050: 正常"
+            bear_fg = "#1E8449"
+        
+        self.lbl_market_status = tk.Label(title_frame, text=bear_text, font=self.label_font, fg=bear_fg)
+        self.lbl_market_status.pack(side=tk.LEFT, padx=(20, 0))
         ttk.Label(title_frame, text="🦊 Kitsune Journal", style="Hint.TLabel").pack(side=tk.RIGHT)
 
         # 表單外框
@@ -131,30 +145,28 @@ class JournalApp(tk.Tk):
         self.lbl_stock_name = ttk.Label(id_box, textvariable=self.stock_name_var, style="StockName.TLabel")
         self.lbl_stock_name.pack(side=tk.LEFT)
 
-        ttk.Label(form_frame, text="買賣動作 (action):", style="FormLabel.TLabel").grid(row=1, column=2, sticky=tk.W, padx=(20, 0), pady=6)
+        # 第 2 列: 交易原因 (左選單) & 自動動作 (右參考)
+        ttk.Label(form_frame, text="交易原因 (reason):", style="FormLabel.TLabel").grid(row=2, column=0, sticky=tk.W, pady=6)
+        reason_box = ttk.Frame(form_frame)
+        reason_box.grid(row=2, column=1, sticky=tk.W, pady=6)
+        self.reason_combo = ttk.Combobox(reason_box, textvariable=self.reason_var, values=REASONS, state="readonly", width=14, font=self.input_font)
+        self.reason_combo.pack(side=tk.LEFT, padx=(0, 4))
+
+        ttk.Label(form_frame, text="自動動作 (action):", style="FormLabel.TLabel").grid(row=2, column=2, sticky=tk.W, padx=(20, 0), pady=6)
         act_box = ttk.Frame(form_frame)
-        act_box.grid(row=1, column=3, sticky=tk.W, pady=6)
-        ttk.Radiobutton(act_box, text="買進 (buy)", variable=self.action_var, value="buy").pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Radiobutton(act_box, text="賣出 (sell)", variable=self.action_var, value="sell").pack(side=tk.LEFT)
+        act_box.grid(row=2, column=3, sticky=tk.W, pady=6)
+        self.act_display_entry = ttk.Entry(act_box, textvariable=self.action_display_var, state="readonly", width=12, font=self.input_font)
+        self.act_display_entry.pack(side=tk.LEFT)
 
-        # 第 2 列: 股數 & 單價
-        ttk.Label(form_frame, text="成交股數 (share):", style="FormLabel.TLabel").grid(row=2, column=0, sticky=tk.W, pady=6)
+        # 第 3 列: 股數 & 單價
+        ttk.Label(form_frame, text="成交股數 (share):", style="FormLabel.TLabel").grid(row=3, column=0, sticky=tk.W, pady=6)
         share_box = ttk.Frame(form_frame)
-        share_box.grid(row=2, column=1, sticky=tk.W, pady=6)
+        share_box.grid(row=3, column=1, sticky=tk.W, pady=6)
         ttk.Entry(share_box, textvariable=self.share_var, width=10, font=self.input_font).pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Button(share_box, text="1張", width=4, command=lambda: self.share_var.set("1000")).pack(side=tk.LEFT, padx=1)
-        ttk.Button(share_box, text="半張", width=4, command=lambda: self.share_var.set("500")).pack(side=tk.LEFT, padx=1)
+        ttk.Button(share_box, text="1張", width=4, command=lambda: self._add_shares(1000)).pack(side=tk.LEFT, padx=1)
 
-        ttk.Label(form_frame, text="成交單價 (price):", style="FormLabel.TLabel").grid(row=2, column=2, sticky=tk.W, padx=(20, 0), pady=6)
-        ttk.Entry(form_frame, textvariable=self.price_var, width=12, font=self.input_font).grid(row=2, column=3, sticky=tk.W, pady=6)
-
-        # 第 3 列: 交易原因
-        ttk.Label(form_frame, text="交易原因 (reason):", style="FormLabel.TLabel").grid(row=3, column=0, sticky=tk.W, pady=6)
-        self.reason_combo = ttk.Combobox(form_frame, textvariable=self.reason_var, values=REASONS, state="readonly", width=16, font=self.input_font)
-        self.reason_combo.grid(row=3, column=1, sticky=tk.W, pady=6)
-
-        reason_hint_lbl = ttk.Label(form_frame, text="ENTRY=買進 | REBALANCE=換股 | SL_HALF=砍半 | SL_FULL=砍全 | TP_QUARTER=停利1/4", style="Hint.TLabel")
-        reason_hint_lbl.grid(row=3, column=2, columnspan=2, sticky=tk.W, padx=(20, 0), pady=6)
+        ttk.Label(form_frame, text="成交單價 (price):", style="FormLabel.TLabel").grid(row=3, column=2, sticky=tk.W, padx=(20, 0), pady=6)
+        ttk.Entry(form_frame, textvariable=self.price_var, width=12, font=self.input_font).grid(row=3, column=3, sticky=tk.W, pady=6)
 
         # 功能按鈕列
         btn_frame = ttk.Frame(main_frame)
@@ -174,7 +186,7 @@ class JournalApp(tk.Tk):
         table_frame.pack(fill=tk.BOTH, expand=True)
 
         columns = ("cycle", "date", "id", "name", "action", "share", "price", "reason")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=8)
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=7)
 
         # 欄位標題與寬度
         col_configs = {
@@ -197,6 +209,16 @@ class JournalApp(tk.Tk):
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # 底部交易原因對照說明區
+        hint_frame = ttk.Frame(main_frame, padding=(0, 5, 0, 0))
+        hint_frame.pack(fill=tk.X)
+        reason_hint_lbl = ttk.Label(
+            hint_frame,
+            text="💡 原因對照：ENTRY = 買進  |  REBALANCE (換股) / SL_FULL (砍全) / TP_QUARTER (停利1/4) / MACRO_SL (宏觀停損) / BEAR_MARKET (熊市清倉) = 賣出",
+            style="Hint.TLabel"
+        )
+        reason_hint_lbl.pack(side=tk.LEFT)
+
         # 狀態列
         status_bar = ttk.Frame(self, relief=tk.SUNKEN, padding=(10, 3))
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -217,12 +239,14 @@ class JournalApp(tk.Tk):
             self.stock_name_var.set("⚠ 未在名單")
             self.lbl_stock_name.configure(foreground="#E67E22")
 
-    def _on_action_changed(self, *args):
-        act = self.action_var.get()
-        if act == "buy" and self.reason_var.get() == "REBALANCE":
-            self.reason_var.set("ENTRY")
-        elif act == "sell" and self.reason_var.get() == "ENTRY":
-            self.reason_var.set("REBALANCE")
+    def _on_reason_changed(self, *args):
+        reason = self.reason_var.get().strip().upper()
+        if reason in ["ENTRY"]:
+            self.action_var.set("buy")
+            self.action_display_var.set("買進 (buy)")
+        else:
+            self.action_var.set("sell")
+            self.action_display_var.set("賣出 (sell)")
 
     def _increment_cycle(self):
         try:
@@ -238,6 +262,13 @@ class JournalApp(tk.Tk):
 
     def _set_today(self):
         self.date_var.set(datetime.now().strftime("%Y/%m/%d"))
+
+    def _add_shares(self, amount):
+        try:
+            current = int(self.share_var.get() or 0)
+        except ValueError:
+            current = 0
+        self.share_var.set(str(current + amount))
 
     def clear_inputs(self):
         self.stock_id_var.set("")
