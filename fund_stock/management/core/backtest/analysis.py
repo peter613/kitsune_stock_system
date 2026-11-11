@@ -13,15 +13,18 @@ def rank_skewness(test_df,top_n=5):
         if rank_df.empty:
             continue
 
-        skewness_value = rank_df['該股當月報酬%'].skew()
+        valid_s = rank_df['該股當月報酬%'].dropna()
+        valid_s = valid_s[np.isfinite(valid_s)]
+        skewness_value = valid_s.skew() if len(valid_s) > 2 else 0.0
         print(f"Rank {i} Skewness : {skewness_value:.4f}")
 
 def portfolio_skewness(test_df, top_n=5,version='v25'):
     # 1. 嚴格篩選出前 N 名的獨立資料
-    df_top_n = test_df[test_df['排名'] <= top_n]
+    df_top_n = test_df[test_df['排名'] <= top_n].copy()
 
     # 2. 動態重算：算出「Top N 組合平均報酬」(Time-Series)
-    port_returns = df_top_n.groupby('換股日期')['該股當月報酬%'].mean()
+    port_returns = df_top_n.groupby('換股日期')['該股當月報酬%'].mean().dropna()
+    port_returns = port_returns[np.isfinite(port_returns)]
 
     # --- 整合：Time-Series 統計與風險分析 ---
     mean_ret = port_returns.mean()
@@ -69,6 +72,11 @@ IQR Upper Fence (Q3+1.5*IQR)   : {upper_fence:.2f}%
 
 def plot_distribution(port_returns, top_n=5, version='v27'):
     """繪製報酬分布直方圖並存檔 (連續刻度邊界對齊版 - 2.5% 級距)"""
+    port_returns = port_returns.dropna()
+    port_returns = port_returns[np.isfinite(port_returns)]
+    if port_returns.empty:
+        return
+
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.suptitle(f'Portfolio Monthly Returns Distribution (Top {top_n})', fontsize=14, fontweight='bold')
     
@@ -87,11 +95,12 @@ def plot_distribution(port_returns, top_n=5, version='v27'):
                             color='steelblue', edgecolor='white', label='Frequency')
     
     # 3. 使用 KDE 繪製實際分布曲線（同軸）
-    kde = gaussian_kde(port_returns)
-    x = np.linspace(min_val, max_val, 200)
-    # 將 KDE 密度值縮放為頻率尺度
-    kde_scaled = kde(x) * len(port_returns) * bin_width
-    ax.plot(x, kde_scaled, 'r-', linewidth=2.5, label='Actual Distribution (KDE)')
+    if len(port_returns) > 1 and port_returns.std() > 0:
+        kde = gaussian_kde(port_returns)
+        x = np.linspace(min_val, max_val, 200)
+        # 將 KDE 密度值縮放為頻率尺度
+        kde_scaled = kde(x) * len(port_returns) * bin_width
+        ax.plot(x, kde_scaled, 'r-', linewidth=2.5, label='Actual Distribution (KDE)')
     
     # 添加統計信息
     skewness = port_returns.skew()

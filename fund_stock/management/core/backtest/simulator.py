@@ -4,8 +4,8 @@
 2.營收
 
 二、風控
-1.微觀個股第一階段移動減碼 (高點回撤 15% 砍半 50%)
-2.微觀個股第二階段移動停損 (高點回撤 20% 全清倉)
+1.熊市(全清倉)
+2.微觀個股移動停損 (高點回撤 20% 全清倉)
 3.宏觀帳戶高點移動停損 (總資產自高點跌 10% 全清倉)
 4.宏觀帳戶%數停利 (總資產獲利達 10% 砍 1/4 入袋)
 5.入場白名單kama_mean控制部位
@@ -32,7 +32,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import yfinance as yf
 import config
-from fund_stock.management.core.position_sizing import get_position_scale, get_market_regime, format_allocation_report
+from fund_stock.management.core.position_sizing import get_position_scale, get_market_regime, format_allocation_report, load_0050_series
 
 
 # ── 中文字體自動設定（解決 CJK glyph 警告）──────────────
@@ -94,7 +94,8 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
 
         # 使用回測後已覆寫的 simulated_return（若存在），否則用原始 return_20d
         ret_col = 'simulated_return' if 'simulated_return' in group.columns else 'return_10d'
-        monthly_avg = group[ret_col].mean() * 100
+        ret_series = group[ret_col].fillna(0.0)
+        monthly_avg = ret_series.mean() * 100
 
         for idx_in_df, row in group.iterrows():
             stock_shap = pick_shap_map[idx_in_df]
@@ -103,6 +104,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
             reasons = [f"{feature_names[j]}({stock_shap[j]:.2f})" for j in top_indices]
             reason_str = " | ".join(reasons)
 
+            val_ret = row[ret_col] if pd.notna(row[ret_col]) else 0.0
             all_trade_records.append({
                 '換股日期': date.date(),
                 '當月組合平均報酬%': round(monthly_avg, 2),
@@ -111,7 +113,7 @@ def export_full_trade_log(test_df, filename, select_rank, model=None):
                 '股票名稱': row['name'],
                 '預測分數': round(row['predict_score'], 4),
                 '選股主因 (Feature:Contribution)': reason_str,
-                '該股當月報酬%': round(row[ret_col] * 100, 2),
+                '該股當月報酬%': round(val_ret * 100, 2),
                 '成交量': round(row['volume'], 2) if 'volume' in row else 'N/A',
                 # 'MOM': round(row['mom'], 2) if 'mom' in row else 'N/A',
             })
@@ -132,7 +134,8 @@ def backtester(
     delay_days=0,
     silent=False,
     export=True,
-    use_market_temper=True,
+    use_bear_market=True,
+    use_market_temper=None,
     use_stock_staged_stop=False,
     stock_stage1_stop=0.10,
     stock_stage1_ratio=0.50,
@@ -140,9 +143,15 @@ def backtester(
     macro_stop_loss=0.10,
     macro_take_profit=0.10,
     execution_mode='next_open',
+    **kwargs
 ):
     if select_rank is None:
         select_rank = list(range(1, 6))
+
+    if use_market_temper is not None:
+        use_bear_market = use_market_temper
+    else:
+        use_market_temper = use_bear_market
 
     MODEL_FILE   = config.get_version_dir(config.STOCK_CBM_DIR, version) / "strategy.cbm"
     DATA_FILE    = config.STOCK_BT_FEATURES_DIR / f"bt_{version}.csv"
@@ -162,11 +171,11 @@ def backtester(
     MACRO_STOP_LOSS     = macro_stop_loss     # 3. 宏觀帳戶高點移動停損 (總資產自高點跌 X% 全清倉)
     MACRO_TAKE_PROFIT   = macro_take_profit   # 4. 宏觀帳戶%數停利 (總資產獲利達 X% 砍 1/4 入袋變現)
     TRIM_RATIO          = 0.25 #    停利減碼比例 (25%)
-    # 5. 入場白名單 kama_mean 控制部位由 use_market_temper 參數控制 (0.75 / 0.50 / 1.00)
+    # 5. 熊市 0/1 開關 (use_bear_market)
 
     rank_str = ','.join(map(str, select_rank))
     if not silent:
-        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: 0050 & 00631L | 溫度調控: {use_market_temper}")
+        print(f"\n啟動回測系統 (單位淨值法) | 策略: Rank {rank_str} | 對照組: 0050 & 00631L | 熊市開關: {use_bear_market}")
 
     # ── 1. 資料預處理 ──────────────────────────────────
     market_file = config.MARKET_DATA_DIR / "market.parquet"
@@ -249,7 +258,7 @@ def backtester(
 
     market_df = market_df.sort_values(['id', 'date']).set_index(['id', 'date'])
 
-    # ── 4. 單位淨值法初始化 ──────────────────────────
+    # ── 4. 初始化 ──────────────────────────
     # nav    : 累積單位淨值（純連乘，每月乘以本期 end_total / capital）
     # capital: 期初總資產（下月買進基準，月底更新為 end_total）
     # ★ 不再維護獨立 nav_curve / equity_curve 陣列；
@@ -263,6 +272,12 @@ def backtester(
     stock_stage1_count = 0
     macro_stop_count   = 0
     macro_trim_count   = 0
+    bear_entry_count   = 0
+    bear_stop_count    = 0
+    bear_count         = 0
+
+    # ── 載入 0050 已調整收盤價（技術性熊市判斷用） ──────
+    _0050_series = load_0050_series()
 
     if not silent:
         print("進入單位淨值法回測迴圈 (日監控模式)...")
@@ -274,9 +289,36 @@ def backtester(
 
         n_stocks = len(top_picks)
 
-        # ── 月初：大盤溫度監控與資金配置買進 ──────────────────
+        # ── 月初：熊市開關判斷與資金配置買進 ──────────────────
         mk_val = float(group['market_kama_mean'].iloc[0]) if 'market_kama_mean' in group.columns else 1.01
-        pos_scale = get_position_scale(mk_val) if use_market_temper else 1.00
+        if use_bear_market:
+            regime = get_market_regime(mk_val, _0050_series[_0050_series.index <= date])
+            pos_scale = regime['position_scale']
+
+            # 技術性熊市：本月暫停交易，資金空手，NAV 持平
+            if regime['bear_market']:
+                bear_entry_count += 1
+                bear_count += 1
+                test_df.loc[top_picks.index, 'simulated_return'] = 0.0
+                monthly_results.append({
+                    'date'        : date,
+                    'month_return': 0.0,
+                    'period_ratio': 1.0,
+                    'nav'         : nav,
+                    'capital'     : capital,
+                    'mk_val'      : mk_val,
+                })
+                try:
+                    any_stock_dates = market_df.xs(slice(None), level='id').loc[date:].index.unique().sort_values()
+                    sub_dates = any_stock_dates[delay_days:delay_days + 21]
+                    for d in sub_dates:
+                        daily_records.append({'date': d, 'daily_nav': capital / INITIAL_CAPITAL})
+                except Exception:
+                    daily_records.append({'date': date, 'daily_nav': capital / INITIAL_CAPITAL})
+                continue
+        else:
+            pos_scale = 1.00
+
         invest_cap = capital * pos_scale
 
         alloc_per_stock = invest_cap / n_stocks
@@ -325,17 +367,67 @@ def backtester(
         has_trimmed_this_month = False
         pending_macro_stop = False
         pending_macro_trim = False
+        pending_bear_stop = False
         peak_virtual_total = capital
 
-        # ── 日內監控迴圈 ───────────────────────────────
-        if execution_mode == 'next_open':
-            # 實務鏡像模式：DC 盤後通知，次日開盤 (Next-Day Open) 執行掛單賣出
-            for d_idx in range(1, 21):
-                # 1. 【早盤開盤撮合】執行昨晚 DC 盤後巡檢排定的掛單
-                # 宏觀停損全清倉 (次日開盤)
-                if pending_macro_stop and not portfolio_liquidated_this_month:
-                    for idx, p in portfolio.items():
-                        if p['alive'] and d_idx < len(p['opens']):
+        # ── 日內監控迴圈 (Next-Day Open 實務撮合) ──────
+        for d_idx in range(1, 21):
+            # 1. 【早盤開盤撮合】執行昨晚 DC 盤後巡檢排定的掛單
+            # 熊市全清倉 (次日開盤無條件清倉)
+            if pending_bear_stop and not portfolio_liquidated_this_month:
+                for idx, p in portfolio.items():
+                    if p['alive']:
+                        cur_p = p['opens'][d_idx] if d_idx < len(p['opens']) else (p['prices'][-1] if len(p['prices']) > 0 else p['entry_p'])
+                        sell_val = p['shares'] * cur_p
+                        fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                        net_proceeds = sell_val - fee
+                        cash_pool += net_proceeds
+                        p['own_cash'] += net_proceeds
+                        p['shares'] = 0.0
+                        p['alive'] = False
+                portfolio_liquidated_this_month = True
+                pending_bear_stop = False
+                bear_stop_count += 1
+                bear_count += 1
+
+            # 宏觀停損全清倉 (次日開盤)
+            if pending_macro_stop and not portfolio_liquidated_this_month:
+                for idx, p in portfolio.items():
+                    if p['alive']:
+                        cur_p = p['opens'][d_idx] if d_idx < len(p['opens']) else (p['prices'][-1] if len(p['prices']) > 0 else p['entry_p'])
+                        sell_val = p['shares'] * cur_p
+                        fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                        net_proceeds = sell_val - fee
+                        cash_pool += net_proceeds
+                        p['own_cash'] += net_proceeds
+                        p['shares'] = 0.0
+                        p['alive'] = False
+                portfolio_liquidated_this_month = True
+                pending_macro_stop = False
+                macro_stop_count += 1
+
+            # 宏觀停利減碼 1/4 (次日開盤)
+            if pending_macro_trim and not has_trimmed_this_month and not portfolio_liquidated_this_month:
+                for idx, p in portfolio.items():
+                    if p['alive'] and d_idx < len(p['opens']):
+                        shares_to_sell = p['shares'] * TRIM_RATIO
+                        cur_p = p['opens'][d_idx]
+                        sell_val = shares_to_sell * cur_p
+                        fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
+                        net_proceeds = sell_val - fee
+                        cash_pool += net_proceeds
+                        p['own_cash'] += net_proceeds
+                        p['shares'] -= shares_to_sell
+                has_trimmed_this_month = True
+                pending_macro_trim = False
+                macro_trim_count += 1
+
+            # 個股微觀移動停損 / 減碼 (次日開盤)
+            if not portfolio_liquidated_this_month:
+                for idx, p in portfolio.items():
+                    if p['alive'] and d_idx < len(p['opens']):
+                        # 第 2 階段全清倉優先執行
+                        if p['pending_st2']:
                             cur_p = p['opens'][d_idx]
                             sell_val = p['shares'] * cur_p
                             fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
@@ -344,196 +436,75 @@ def backtester(
                             p['own_cash'] += net_proceeds
                             p['shares'] = 0.0
                             p['alive'] = False
-                    portfolio_liquidated_this_month = True
-                    pending_macro_stop = False
-                    macro_stop_count += 1
-
-                # 宏觀停利減碼 1/4 (次日開盤)
-                if pending_macro_trim and not has_trimmed_this_month and not portfolio_liquidated_this_month:
-                    for idx, p in portfolio.items():
-                        if p['alive'] and d_idx < len(p['opens']):
-                            shares_to_sell = p['shares'] * TRIM_RATIO
+                            p['pending_st2'] = False
+                            stop_loss_count += 1
+                        # 第 1 階段減碼砍半
+                        elif p['pending_st1'] and not p['stage1_trimmed']:
+                            shares_to_trim = p['shares'] * STOCK_STAGE1_RATIO
                             cur_p = p['opens'][d_idx]
-                            sell_val = shares_to_sell * cur_p
+                            sell_val = shares_to_trim * cur_p
                             fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
                             net_proceeds = sell_val - fee
                             cash_pool += net_proceeds
                             p['own_cash'] += net_proceeds
-                            p['shares'] -= shares_to_sell
-                    has_trimmed_this_month = True
-                    pending_macro_trim = False
-                    macro_trim_count += 1
+                            p['shares'] -= shares_to_trim
+                            p['stage1_trimmed'] = True
+                            p['pending_st1'] = False
+                            stock_stage1_count += 1
 
-                # 個股微觀移動停損 / 減碼 (次日開盤)
-                if not portfolio_liquidated_this_month:
-                    for idx, p in portfolio.items():
-                        if p['alive'] and d_idx < len(p['opens']):
-                            # 第 2 階段全清倉優先執行
-                            if p['pending_st2']:
-                                cur_p = p['opens'][d_idx]
-                                sell_val = p['shares'] * cur_p
-                                fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                net_proceeds = sell_val - fee
-                                cash_pool += net_proceeds
-                                p['own_cash'] += net_proceeds
-                                p['shares'] = 0.0
-                                p['alive'] = False
-                                p['pending_st2'] = False
-                                stop_loss_count += 1
-                            # 第 1 階段減碼砍半
-                            elif p['pending_st1'] and not p['stage1_trimmed']:
-                                shares_to_trim = p['shares'] * STOCK_STAGE1_RATIO
-                                cur_p = p['opens'][d_idx]
-                                sell_val = shares_to_trim * cur_p
-                                fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                net_proceeds = sell_val - fee
-                                cash_pool += net_proceeds
-                                p['own_cash'] += net_proceeds
-                                p['shares'] -= shares_to_trim
-                                p['stage1_trimmed'] = True
-                                p['pending_st1'] = False
-                                stock_stage1_count += 1
+            # 2. 【收盤市值結算與日 NAV 記錄】
+            today_date = None
+            final_day_stock_val = 0.0
+            for idx, p in portfolio.items():
+                if d_idx < len(p['dates']) and today_date is None:
+                    today_date = p['dates'][d_idx]
+                if p['alive'] and d_idx < len(p['prices']):
+                    cur_val = p['shares'] * p['prices'][d_idx]
+                    max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
+                    if cur_val > max_allowed:
+                        cur_val = max_allowed
+                    final_day_stock_val += cur_val
 
-                # 2. 【收盤市值結算與日 NAV 記錄】
-                today_date = None
-                final_day_stock_val = 0.0
-                for idx, p in portfolio.items():
-                    if d_idx < len(p['dates']) and today_date is None:
-                        today_date = p['dates'][d_idx]
-                    if p['alive'] and d_idx < len(p['prices']):
-                        cur_val = p['shares'] * p['prices'][d_idx]
-                        max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
-                        if cur_val > max_allowed:
-                            cur_val = max_allowed
-                        final_day_stock_val += cur_val
-
-                if today_date is not None:
-                    day_total = final_day_stock_val + cash_pool
-                    day_nav = day_total / INITIAL_CAPITAL
-                    daily_records.append({'date': today_date, 'daily_nav': day_nav})
-
-                # 3. 【傍晚 DC 巡檢】檢查今日收盤價，排定明晨開盤掛單
-                day_total = final_day_stock_val + cash_pool
-                current_return = (day_total / capital) - 1.0
-                if day_total > peak_virtual_total:
-                    peak_virtual_total = day_total
-                current_drawdown = (day_total / peak_virtual_total) - 1.0
-
-                # 宏觀條件檢查
-                if not portfolio_liquidated_this_month and not pending_macro_stop:
-                    if current_drawdown <= -MACRO_STOP_LOSS:
-                        pending_macro_stop = True
-                    elif current_return >= MACRO_TAKE_PROFIT and not has_trimmed_this_month and not pending_macro_trim:
-                        pending_macro_trim = True
-
-                # 個股微觀條件檢查
-                if not portfolio_liquidated_this_month and not pending_macro_stop:
-                    for idx, p in portfolio.items():
-                        if p['alive'] and d_idx < len(p['prices']):
-                            cur_p = p['prices'][d_idx]
-                            if cur_p > p['peak_p']:
-                                p['peak_p'] = cur_p
-                            if cur_p <= p['peak_p'] * (1.0 - STOCK_TRAILING_STOP):
-                                p['pending_st2'] = True
-                            elif use_stock_staged_stop and not p['stage1_trimmed'] and not p['pending_st1']:
-                                if cur_p <= p['peak_p'] * (1.0 - STOCK_STAGE1_STOP):
-                                    p['pending_st1'] = True
-
-        else:
-            # 舊版同日收盤撮合模式 (Same-Day Close)
-            for d_idx in range(20):
-                today_date = None
-                virtual_day_stock_val = 0.0
-                for idx, p in portfolio.items():
-                    if d_idx < len(p['prices']) and today_date is None:
-                        today_date = p['dates'][d_idx]
-                    if p['alive'] and d_idx < len(p['prices']):
-                        cur_val = p['shares'] * p['prices'][d_idx]
-                        max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
-                        if cur_val > max_allowed:
-                            cur_val = max_allowed
-                        virtual_day_stock_val += cur_val
-
-                if today_date is None:
-                    continue
-
-                virtual_day_total = virtual_day_stock_val + cash_pool
-                current_return = (virtual_day_total / capital) - 1.0
-                macro_liquidated_today = False
-                if virtual_day_total > peak_virtual_total:
-                    peak_virtual_total = virtual_day_total
-                current_drawdown = (virtual_day_total / peak_virtual_total) - 1.0
-
-                if not portfolio_liquidated_this_month:
-                    if current_drawdown <= -MACRO_STOP_LOSS:
-                        for idx, p in portfolio.items():
-                            if p['alive'] and d_idx < len(p['prices']):
-                                cur_p = p['prices'][d_idx]
-                                sell_val = p['shares'] * cur_p
-                                fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                net_proceeds = sell_val - fee
-                                cash_pool += net_proceeds
-                                p['own_cash'] += net_proceeds
-                                p['shares'] = 0.0
-                                p['alive'] = False
-                        portfolio_liquidated_this_month = True
-                        macro_liquidated_today = True
-                        macro_stop_count += 1
-                    elif current_return >= MACRO_TAKE_PROFIT and not has_trimmed_this_month:
-                        for idx, p in portfolio.items():
-                            if p['alive'] and d_idx < len(p['prices']):
-                                cur_p = p['prices'][d_idx]
-                                shares_to_sell = p['shares'] * TRIM_RATIO
-                                sell_val = shares_to_sell * cur_p
-                                fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                net_proceeds = sell_val - fee
-                                cash_pool += net_proceeds
-                                p['own_cash'] += net_proceeds
-                                p['shares'] -= shares_to_sell
-                        has_trimmed_this_month = True
-                        macro_trim_count += 1
-
-                if not macro_liquidated_today and not portfolio_liquidated_this_month:
-                    for idx, p in portfolio.items():
-                        if p['alive'] and d_idx < len(p['prices']):
-                            if d_idx == 0:
-                                continue
-                            cur_p = p['prices'][d_idx]
-                            if cur_p > p['peak_p']:
-                                p['peak_p'] = cur_p
-                            if use_stock_staged_stop and not p['stage1_trimmed']:
-                                if cur_p <= p['peak_p'] * (1.0 - STOCK_STAGE1_STOP):
-                                    shares_to_trim = p['shares'] * STOCK_STAGE1_RATIO
-                                    sell_val = shares_to_trim * cur_p
-                                    fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                    net_proceeds = sell_val - fee
-                                    cash_pool += net_proceeds
-                                    p['own_cash'] += net_proceeds
-                                    p['shares'] -= shares_to_trim
-                                    p['stage1_trimmed'] = True
-                                    stock_stage1_count += 1
-                            if cur_p <= p['peak_p'] * (1.0 - STOCK_TRAILING_STOP):
-                                sell_val = p['shares'] * cur_p
-                                fee = _calc_tx_cost(sell_val, TRANSACTION_COST)
-                                net_proceeds = sell_val - fee
-                                cash_pool += net_proceeds
-                                p['own_cash'] += net_proceeds
-                                p['shares'] = 0.0
-                                p['alive'] = False
-                                stop_loss_count += 1
-
-                final_day_stock_val = 0.0
-                for idx, p in portfolio.items():
-                    if p['alive'] and d_idx < len(p['prices']):
-                        cur_val = p['shares'] * p['prices'][d_idx]
-                        max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
-                        if cur_val > max_allowed:
-                            cur_val = max_allowed
-                        final_day_stock_val += cur_val
-
+            if today_date is not None:
                 day_total = final_day_stock_val + cash_pool
                 day_nav = day_total / INITIAL_CAPITAL
                 daily_records.append({'date': today_date, 'daily_nav': day_nav})
+
+            # 3. 【傍晚 DC 巡檢】檢查今日收盤價，排定明晨開盤掛單
+            day_total = final_day_stock_val + cash_pool
+            current_return = (day_total / capital) - 1.0
+            if day_total > peak_virtual_total:
+                peak_virtual_total = day_total
+            current_drawdown = (day_total / peak_virtual_total) - 1.0
+
+            # 熊市風控判斷 (若持倉中遭遇技術性熊市，排定次日開盤無條件清倉)
+            if use_bear_market and not portfolio_liquidated_this_month and not pending_bear_stop:
+                if today_date is not None:
+                    _0050_sub = _0050_series[_0050_series.index <= today_date]
+                    if not _0050_sub.empty:
+                        dd_0050 = _0050_sub.iloc[-1] / _0050_sub.max() - 1.0
+                        if dd_0050 <= -0.20:
+                            pending_bear_stop = True
+
+            # 宏觀條件檢查
+            if not portfolio_liquidated_this_month and not pending_macro_stop and not pending_bear_stop:
+                if current_drawdown <= -MACRO_STOP_LOSS:
+                    pending_macro_stop = True
+                elif current_return >= MACRO_TAKE_PROFIT and not has_trimmed_this_month and not pending_macro_trim:
+                    pending_macro_trim = True
+
+            # 個股微觀條件檢查
+            if not portfolio_liquidated_this_month and not pending_macro_stop and not pending_bear_stop:
+                for idx, p in portfolio.items():
+                    if p['alive'] and d_idx < len(p['prices']):
+                        cur_p = p['prices'][d_idx]
+                        if cur_p > p['peak_p']:
+                            p['peak_p'] = cur_p
+                        if cur_p <= p['peak_p'] * (1.0 - STOCK_TRAILING_STOP):
+                            p['pending_st2'] = True
+                        elif use_stock_staged_stop and not p['stage1_trimmed'] and not p['pending_st1']:
+                            if cur_p <= p['peak_p'] * (1.0 - STOCK_STAGE1_STOP):
+                                p['pending_st1'] = True
 
         # ── 月底結算：純 NAV 比率法 ──────────────────────
         # 期末股票總市值（使用每檔最後一筆有效價格）
@@ -541,7 +512,7 @@ def backtester(
         for idx, p in portfolio.items():
             prices = p.get('prices', [])
             if p['alive'] and len(prices) > 0:
-                end_p = prices[min(20, len(prices) - 1)] if execution_mode == 'next_open' else prices[-1]
+                end_p = prices[min(20, len(prices) - 1)]
                 final_mkt = p['shares'] * end_p
                 # 強制獲利封頂
                 max_allowed = (alloc_per_stock * (1.0 + SINGLE_TRADE_CAP)) - p['own_cash']
@@ -576,6 +547,9 @@ def backtester(
                 # 分母：月初「原始等額分配」（未扣買入費，對應 return_20d 的基準）
                 sim_ret    = total_recv / alloc_per_stock - 1.0
                 test_df.at[idx, 'simulated_return'] = sim_ret
+
+        # 防呆補齊：確保本期 top_picks 絕不殘留 NaN
+        test_df.loc[top_picks.index, 'simulated_return'] = test_df.loc[top_picks.index, 'simulated_return'].fillna(0.0)
 
         # ── 更新下期資本並記錄 ───────────────────────────
         capital = end_total   # 下月買進金額 = 本月期末總資產
@@ -716,23 +690,16 @@ def backtester(
         print(f"日 Sortino:   {daily_sortino:>10.2f}")
         print(f"日勝率:       {daily_winrate:>10.2f}%")
         print("-" * 80)
-        # if nav_0050 is not None:
-        #     print(f"0050   總報酬 / 年化:   {ret_0050*100:>10.2f}%  /  {annual_0050*100:>6.2f}%")
-        # if nav_631 is not None:
-        #     print(f"00631L 總報酬 / 年化:   {ret_631*100:>10.2f}%  /  {annual_631*100:>6.2f}%")
         print(f"Beta (vs 0050):       {beta:>10.2f}")
         print(f"Alpha(年化, vs 0050): {alpha*100:>10.2f}%")
         print("-" * 80)
-        bull_months = (results_df['mk_val'] > 1.0).sum() if 'mk_val' in results_df.columns else 0
-        def_months  = (results_df['mk_val'] <= 1.0).sum() if 'mk_val' in results_df.columns else 0
         print(f"月數:              {total_months}")
         if use_stock_staged_stop:
             print(f"微觀{STOCK_STAGE1_STOP*100:.0f}%高點移動砍半次數: {stock_stage1_count} 次")
         print(f"微觀{STOCK_TRAILING_STOP*100:.0f}%高點移動全砍次數: {stop_loss_count} 次")
         print(f"宏觀停損觸發:      {macro_stop_count} 次")
         print(f"宏觀停利觸發:      {macro_trim_count} 次")
-        print(f"大盤多頭月數 (>0.98): {bull_months} 個月 (滿倉進場)")
-        print(f"大盤防衛月數(<=0.98): {def_months} 個月 (留1/4現金)")
+        print(f"技術性熊市觸發:    {bear_count} 次 (進場避開 {bear_entry_count} 次 / 持倉清倉 {bear_stop_count} 次)")
         print("=" * 80)
 
 
