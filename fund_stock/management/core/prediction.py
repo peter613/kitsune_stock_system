@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from datetime import datetime
 import config
-from fund_stock.management.core.position_sizing import format_allocation_report
+from fund_stock.management.core.position_sizing import format_allocation_report, load_0050_series
 
 def search_stock(stock_name: str, version='v20') -> str:
     """
@@ -138,7 +138,7 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
     print(f"資料日期: {latest_date.date()} | 篩選排名: {select_ranks}")
     if 'market_kama_mean' in target_df.columns:
         mk_val = float(target_df['market_kama_mean'].iloc[0])
-        print(f"\n{format_allocation_report(mk_val)}")
+        print(f"\n{format_allocation_report(mk_val, load_0050_series())}")
 
     # 3. 預測與排序
     if target_df.empty:
@@ -210,6 +210,6 @@ def prediction(version='v8', select_ranks=[1, 2, 3, 4, 5]) -> str: # 加上型�
 
 if __name__ == "__main__":
     #print(search_stock('台光電', version='v33'))
-    result = prediction(version='v47', select_ranks=[c for c in range(1,6)])
+    result = prediction(version='v60', select_ranks=[c for c in range(1,4)])
     if isinstance(result, str):
         print(result)
