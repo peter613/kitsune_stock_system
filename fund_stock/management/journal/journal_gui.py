@@ -102,18 +102,18 @@ class JournalApp(tk.Tk):
         title_frame.pack(fill=tk.X, pady=(0, 10))
         ttk.Label(title_frame, text="台股交易紀錄輸入 (journal.csv)", style="Title.TLabel").pack(side=tk.LEFT)
         
-        # 0050 熊市指標即時顯示
-        try:
-            s_0050 = load_0050_series()
-            regime = get_market_regime(1.0, s_0050)
-            bear_text = f" {regime['regime_label']} (0050回撤: {regime['_0050_return']})"
-            bear_fg = "#C0392B" if regime['bear_market'] else "#1E8449"
-        except Exception:
-            bear_text = "0050: 正常"
-            bear_fg = "#1E8449"
+        # # 0050 熊市指標即時顯示
+        # try:
+        #     s_0050 = load_0050_series()
+        #     regime = get_market_regime(1.0, s_0050)
+        #     bear_text = f" {regime['regime_label']} (0050回撤: {regime['_0050_return']})"
+        #     bear_fg = "#C0392B" if regime['bear_market'] else "#1E8449"
+        # except Exception:
+        #     bear_text = "0050: 正常"
+        #     bear_fg = "#1E8449"
         
-        self.lbl_market_status = tk.Label(title_frame, text=bear_text, font=self.label_font, fg=bear_fg)
-        self.lbl_market_status.pack(side=tk.LEFT, padx=(20, 0))
+        #self.lbl_market_status = tk.Label(title_frame, text=bear_text, font=self.label_font, fg=bear_fg)
+        #self.lbl_market_status.pack(side=tk.LEFT, padx=(20, 0))
         ttk.Label(title_frame, text="🦊 Kitsune Journal", style="Hint.TLabel").pack(side=tk.RIGHT)
 
         # 表單外框
